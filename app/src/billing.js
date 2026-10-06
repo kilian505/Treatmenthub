@@ -1,0 +1,245 @@
+// Rechnungen, PDF und Statistik
+import { jsPDF } from "https://cdn.jsdelivr.net/npm/jspdf@2.5.2/+esm";
+import { $, $$, esc, eur, eur0, eurPdf, ymd, parseLocal, addDays, fmtDate, MONTHS, MONTHS_LONG } from "./util.js";
+import { ST, render, go, INV_STATUS, pat, pname, apptTotal, apptTitle, billable, taxNote, toast, toastError, modal, busy, armed } from "./state.js";
+import * as api from "./api.js";
+
+/* ---------------- Rechnungsliste ---------------- */
+export function invoicesView(main) {
+  const { S } = ST;
+  const groups = {}; billable().forEach((a) => (groups[a.patientId] = groups[a.patientId] || []).push(a));
+  const openInv = S.invoices.filter((i) => i.status === "offen"), y = String(new Date().getFullYear());
+  const paidYear = S.invoices.filter((i) => i.status === "bezahlt" && i.date.startsWith(y)).reduce((t, i) => t + i.total, 0);
+  const toBill = billable().reduce((t, a) => t + apptTotal(a), 0);
+  main.innerHTML = `
+    <div class="page-head"><h1>Rechnungen</h1></div>
+    <div class="kpis">
+      <div class="panel kpi"><div class="label">Noch abzurechnen</div><div class="v num">${eur(toBill)}</div><div class="muted small">${billable().length} durchgeführte Termine</div></div>
+      <div class="panel kpi"><div class="label">Offene Rechnungen</div><div class="v num">${eur(openInv.reduce((t, i) => t + i.total, 0))}</div><div class="muted small">${openInv.length} Rechnungen</div></div>
+      <div class="panel kpi"><div class="label">Bezahlt ${y}</div><div class="v num">${eur(paidYear)}</div><div class="muted small">nach Rechnungsdatum</div></div>
+    </div>
+    <h2 style="margin-bottom:10px">Bereit zur Abrechnung</h2>
+    ${Object.keys(groups).length ? `<div class="cards" style="margin-bottom:22px">${Object.entries(groups).map(([pid, list]) => `
+      <div class="panel bill-card"><div style="display:flex;justify-content:space-between;gap:.5rem"><strong>${esc(pname(pat(pid)))}</strong><span class="num">${eur(list.reduce((t, a) => t + apptTotal(a), 0))}</span></div>
+      <ul>${list.sort((a, b) => a.start.localeCompare(b.start)).map((a) => `<li><span class="num">${fmtDate(parseLocal(a.start))}</span>: ${esc(apptTitle(a))}</li>`).join("")}</ul>
+      <button class="btn primary sm" data-bill="${pid}" style="align-self:flex-start">${list.length > 1 ? `Sammelrechnung (${list.length} Termine)` : "Rechnung erstellen"}</button></div>`).join("")}</div>`
+      : `<div class="panel empty" style="margin-bottom:22px">Alle durchgeführten Termine sind abgerechnet.</div>`}
+    <h2 style="margin-bottom:10px">Alle Rechnungen</h2>
+    <div class="panel table-wrap"><table>
+      <thead><tr><th>Nummer</th><th>Datum</th><th>Patient</th><th>Fällig</th><th>Status</th><th class="r">Betrag</th></tr></thead>
+      <tbody>${S.invoices.slice().sort((a, b) => b.date.localeCompare(a.date) || b.number.localeCompare(a.number)).map((i) => {
+        const due = addDays(parseLocal(i.date), i.payDays), over = i.status === "offen" && due < new Date();
+        return `<tr class="click" data-iid="${i.id}"><td class="num"><strong>${i.number}</strong></td><td class="num">${fmtDate(parseLocal(i.date))}</td><td>${esc(i.patient.name)}</td><td class="num">${i.status === "offen" ? fmtDate(due) + (over ? ' <span class="pill s-ausgefallen">überfällig</span>' : "") : "–"}</td><td><span class="pill s-${i.status}">${INV_STATUS[i.status]}</span></td><td class="r num">${eur(i.total)}</td></tr>`;
+      }).join("") || '<tr><td colspan="6" class="empty">Noch keine Rechnungen.</td></tr>'}</tbody>
+    </table></div>`;
+  $$("[data-bill]").forEach((b) => (b.onclick = () => busy(b, async () => {
+    try {
+      const list = groups[b.dataset.bill];
+      const inv = await api.createInvoice(b.dataset.bill, list.map((a) => a.id));
+      S.invoices.push(inv); list.forEach((a) => (a.invoiceId = inv.id));
+      render(); openInvoice(inv.id); toast(`Rechnung ${inv.number} erstellt`);
+    } catch (e) { toastError(e); }
+  })));
+  $$("[data-iid]").forEach((r) => (r.onclick = () => openInvoice(r.dataset.iid)));
+}
+
+function invoiceHtml(i) {
+  const pr = i.practice, due = addDays(parseLocal(i.date), i.payDays);
+  return `<div class="paper">
+    <div class="p-top">
+      <div><div class="p-sender">${esc(pr.name)} · ${esc(pr.street)} · ${esc(pr.zip)} ${esc(pr.city)}</div>
+        <div>${esc(i.patient.name)}<br>${esc(i.patient.street)}<br>${esc(i.patient.zip)} ${esc(i.patient.city)}</div></div>
+      <div style="text-align:right"><strong>${esc(pr.name)}</strong><br>${esc(pr.owner)}${pr.title ? ", " + esc(pr.title) : ""}<br>${esc(pr.street)}<br>${esc(pr.zip)} ${esc(pr.city)}<br>${esc(pr.phone)}<br>${esc(pr.email)}</div>
+    </div>
+    <h3>Rechnung ${esc(i.number)}${i.status === "storniert" ? " · STORNIERT" : ""}</h3>
+    <div class="num">Rechnungsdatum: ${fmtDate(parseLocal(i.date))} · Behandlungszeitraum: ${fmtDate(parseLocal(i.period[0]))}${i.period[1] !== i.period[0] ? " – " + fmtDate(parseLocal(i.period[1])) : ""}${i.patient.birth ? ` · Geb.-Datum: ${fmtDate(parseLocal(i.patient.birth))}` : ""}</div>
+    <div class="table-wrap" style="margin-top:12px"><table>
+      <thead><tr><th>Datum</th><th>Ziffer</th><th>Leistung</th><th class="r">Anz.</th><th class="r">Betrag</th></tr></thead>
+      <tbody>${i.lines.map((l) => `<tr><td class="num">${fmtDate(parseLocal(l.date))}</td><td class="num">${esc(l.code) || "–"}</td><td>${esc(l.name)}</td><td class="r num">${l.qty}</td><td class="r num">${eur(l.qty * l.price)}</td></tr>`).join("")}
+        <tr class="p-total"><td colspan="4">Gesamtbetrag</td><td class="r num">${eur(i.total)}</td></tr></tbody>
+    </table></div>
+    <p>${esc(taxNote(pr.taxMode))}</p>
+    <p>Bitte überweisen Sie den Betrag bis zum <strong class="num">${fmtDate(due)}</strong> unter Angabe der Rechnungsnummer.</p>
+    <div class="p-foot"><span>${esc(pr.name)}${pr.taxNo ? " · Steuernr. " + esc(pr.taxNo) : ""}</span><span>${esc(pr.bank)}${pr.iban ? " · IBAN " + esc(pr.iban) : ""}</span></div>
+  </div>`;
+}
+
+export function openInvoice(id) {
+  const { S } = ST;
+  const i = S.invoices.find((x) => x.id === id); if (!i) return;
+  modal(`
+    <div class="modal-head"><h2>Rechnung ${esc(i.number)}</h2><span class="pill s-${i.status}">${INV_STATUS[i.status]}</span><button class="btn ghost sm" data-close aria-label="Schließen">✕</button></div>
+    <div class="modal-body"><div class="paper-wrap">${invoiceHtml(i)}</div>
+      ${i.status === "storniert" ? `<div class="alert info">Storniert am ${fmtDate(parseLocal(i.cancelledAt))}. Die Termine sind wieder abrechenbar. Die Rechnungsnummer bleibt vergeben.</div>`
+        : `<div class="alert info">Erstellte Rechnungen lassen sich nicht mehr bearbeiten oder löschen, nur stornieren. So bleibt die Nummernfolge lückenlos.</div>`}
+    </div>
+    <div class="modal-foot">
+      <div class="left">${i.status === "offen" ? '<button class="btn" id="paid">Als bezahlt markieren</button>' : ""}${i.status === "bezahlt" ? '<button class="btn" id="unpaid">Zahlung zurücknehmen</button>' : ""}${i.status !== "storniert" ? '<button class="btn danger" id="storno">Stornieren</button>' : ""}</div>
+      <button class="btn" data-close>Schließen</button><button class="btn primary" id="pdf">PDF herunterladen</button>
+    </div>`, { wide: true });
+  const setStatus = (btn, status, msg) => busy(btn, async () => {
+    try {
+      const upd = await api.setInvoiceStatus(i.id, status);
+      Object.assign(i, upd);
+      if (status === "storniert") S.appts.forEach((a) => { if (a.invoiceId === i.id) a.invoiceId = null; });
+      render(); openInvoice(i.id); if (msg) toast(msg);
+    } catch (e) { toastError(e); }
+  });
+  const paid = $("#paid"); if (paid) paid.onclick = () => setStatus(paid, "bezahlt", "Als bezahlt markiert");
+  const unp = $("#unpaid"); if (unp) unp.onclick = () => setStatus(unp, "offen");
+  const st = $("#storno"); if (st) st.onclick = () => { if (armed(st, "Wirklich stornieren?")) setStatus(st, "storniert", `Rechnung ${i.number} storniert`); };
+  $("#pdf").onclick = () => downloadPdf(i);
+}
+
+function buildPdf(i) {
+  const doc = new jsPDF({ unit: "mm", format: "a4" }); const pr = i.practice; const L = 25, R = 190;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5); doc.setTextColor(110);
+  doc.text(`${pr.name} · ${pr.street} · ${pr.zip} ${pr.city}`, L, 50);
+  doc.setDrawColor(160); doc.line(L, 51, L + 85, 51);
+  doc.setFontSize(10.5); doc.setTextColor(20);
+  doc.text([i.patient.name, i.patient.street, `${i.patient.zip} ${i.patient.city}`], L, 58);
+  doc.setFont("helvetica", "bold"); doc.text(pr.name || "", R, 22, { align: "right" });
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+  doc.text([`${pr.owner}${pr.title ? ", " + pr.title : ""}`, pr.street, `${pr.zip} ${pr.city}`, pr.phone, pr.email].filter(Boolean), R, 27, { align: "right" });
+  doc.text([`Rechnungsnr.: ${i.number}`, `Datum: ${fmtDate(parseLocal(i.date))}`].concat(i.patient.birth ? [`Geb.-Datum Patient: ${fmtDate(parseLocal(i.patient.birth))}`] : []), R, 58, { align: "right" });
+  doc.setFont("helvetica", "bold"); doc.setFontSize(15);
+  doc.text(`Rechnung${i.status === "storniert" ? " (storniert)" : ""}`, L, 95);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9.5);
+  const per = fmtDate(parseLocal(i.period[0])) + (i.period[1] !== i.period[0] ? " – " + fmtDate(parseLocal(i.period[1])) : "");
+  doc.text(`Behandlungszeitraum: ${per}`, L, 102);
+  let y = 114; const c = { d: L, z: L + 24, n: L + 42, q: R - 28, b: R };
+  doc.setFontSize(8.5); doc.setTextColor(100);
+  doc.text("Datum", c.d, y); doc.text("Ziffer", c.z, y); doc.text("Leistung", c.n, y); doc.text("Anz.", c.q, y, { align: "right" }); doc.text("Betrag", c.b, y, { align: "right" });
+  doc.setDrawColor(200); doc.line(L, y + 2, R, y + 2); y += 8; doc.setTextColor(20); doc.setFontSize(9.5);
+  i.lines.forEach((l) => {
+    if (y > 255) { doc.addPage(); y = 25; }
+    const name = doc.splitTextToSize(l.name, c.q - c.n - 14);
+    doc.text(fmtDate(parseLocal(l.date)), c.d, y); doc.text(l.code || "–", c.z, y); doc.text(name, c.n, y);
+    doc.text(String(l.qty), c.q, y, { align: "right" }); doc.text(eurPdf(l.qty * l.price), c.b, y, { align: "right" });
+    y += 6 * name.length; doc.setDrawColor(230); doc.line(L, y - 3.5, R, y - 3.5);
+  });
+  y += 2; doc.setDrawColor(40); doc.setLineWidth(0.5); doc.line(L, y - 3, R, y - 3); doc.setLineWidth(0.2);
+  doc.setFont("helvetica", "bold"); doc.text("Gesamtbetrag", c.n, y + 2); doc.text(eurPdf(i.total), c.b, y + 2, { align: "right" });
+  doc.setFont("helvetica", "normal"); y += 14;
+  const note = taxNote(pr.taxMode); if (note) { doc.text(doc.splitTextToSize(note, R - L), L, y); y += 8; }
+  doc.text(doc.splitTextToSize(`Bitte überweisen Sie den Gesamtbetrag bis zum ${fmtDate(addDays(parseLocal(i.date), i.payDays))} unter Angabe der Rechnungsnummer ${i.number} auf das unten genannte Konto.`, R - L), L, y);
+  doc.setDrawColor(190); doc.line(L, 277, R, 277); doc.setFontSize(7.5); doc.setTextColor(100);
+  doc.text(`${pr.name} · ${pr.owner}${pr.taxNo ? " · Steuernr. " + pr.taxNo : ""}`, L, 281);
+  doc.text(`${pr.bank}${pr.iban ? " · IBAN " + pr.iban : ""}`, L, 285);
+  return doc;
+}
+function downloadPdf(i) {
+  try { buildPdf(i).save(`Rechnung_${i.number}_${i.patient.name.replace(/\s+/g, "_")}.pdf`); }
+  catch (e) { toastError(e); }
+}
+
+/* ---------------- Statistik ---------------- */
+const eurShort = (n) => (n >= 1000 ? (n / 1000).toLocaleString("de-DE", { maximumFractionDigits: 1 }) + " T€" : Math.round(n) + " €");
+function niceStep(raw) { const p = Math.pow(10, Math.floor(Math.log10(raw || 1))); const f = raw / p; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p; }
+function roundTop(x, y, w, h, r) { r = Math.min(r, w / 2, h); if (h <= 0) return ""; return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`; }
+function roundRight(x, y, w, h, r) { r = Math.min(r, h / 2, w); if (w <= 0) return ""; return `M${x},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h - r}Q${x + w},${y + h} ${x + w - r},${y + h}H${x}Z`; }
+
+function yearStats(y) {
+  const { S } = ST; const ys = String(y);
+  const inv = S.invoices.filter((i) => i.status !== "storniert" && i.date.startsWith(ys));
+  const months = Array.from({ length: 12 }, () => ({ paid: 0, open: 0, count: 0 }));
+  inv.forEach((i) => { const m = +i.date.slice(5, 7) - 1; months[m][i.status === "bezahlt" ? "paid" : "open"] += i.total; months[m].count++; });
+  const total = inv.reduce((t, i) => t + i.total, 0), paid = inv.filter((i) => i.status === "bezahlt").reduce((t, i) => t + i.total, 0);
+  const appts = S.appts.filter((a) => a.start.startsWith(ys));
+  const done = appts.filter((a) => a.status === "durchgefuehrt").length, noshow = appts.filter((a) => a.status === "ausgefallen").length;
+  const bySvc = {}; inv.forEach((i) => i.lines.forEach((l) => (bySvc[l.name] = (bySvc[l.name] || 0) + l.qty * l.price)));
+  return { inv, months, total, paid, open: total - paid, done, noshow, bySvc };
+}
+
+export function statsView(main) {
+  const { S, UI } = ST;
+  const now = new Date(), cy = now.getFullYear();
+  const years = [...new Set(S.invoices.map((i) => +i.date.slice(0, 4)).concat([cy]))].sort();
+  if (!years.includes(UI.statYear)) UI.statYear = cy;
+  const y = UI.statYear, st = yearStats(y), prev = yearStats(y - 1);
+  const isCur = y === cy, lastM = isCur ? now.getMonth() : 11;
+  const prevSame = prev.months.slice(0, lastM + 1).reduce((t, m) => t + m.paid + m.open, 0);
+  const curSame = st.months.slice(0, lastM + 1).reduce((t, m) => t + m.paid + m.open, 0);
+  const delta = prevSame ? ((curSame - prevSame) / prevSame) * 100 : null;
+  const toBill = billable().reduce((t, a) => t + apptTotal(a), 0);
+  const quote = st.done + st.noshow ? (st.noshow / (st.done + st.noshow)) * 100 : 0;
+  main.innerHTML = `
+    <div class="page-head"><h1>Statistik</h1><span class="spacer"></span>
+      <div class="seg" role="group" aria-label="Jahr">${years.map((v) => `<button data-year="${v}" aria-pressed="${v === y}" class="num">${v}</button>`).join("")}</div></div>
+    <div class="kpis kpis4">
+      <div class="panel kpi"><div class="label">Umsatz ${y}${isCur ? " bisher" : ""}</div><div class="v num">${eur0(st.total)}</div>
+        <div class="muted small">${delta === null ? "Kein Vorjahr zum Vergleich" : `<span class="${delta >= 0 ? "up" : "down"}">${delta >= 0 ? "▲" : "▼"} ${Math.abs(delta).toLocaleString("de-DE", { maximumFractionDigits: 0 })} %</span> ggü. ${isCur ? "Jan–" + MONTHS[lastM] + " " : ""}${y - 1}`}</div></div>
+      <div class="panel kpi"><div class="label">Davon bezahlt</div><div class="v num">${eur0(st.paid)}</div><div class="muted small">Offen: <span class="num">${eur0(st.open)}</span></div></div>
+      <div class="panel kpi"><div class="label">Ø pro Monat</div><div class="v num">${eur0(st.total / (lastM + 1))}</div><div class="muted small">über ${lastM + 1} Monat${lastM ? "e" : ""}</div></div>
+      <div class="panel kpi"><div class="label">Behandlungen</div><div class="v num">${st.done.toLocaleString("de-DE")}</div><div class="muted small">Ausfallquote <span class="num">${quote.toLocaleString("de-DE", { maximumFractionDigits: 1 })} %</span></div></div>
+    </div>
+    ${isCur && toBill ? `<div class="alert warn" style="margin-bottom:16px;display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">Noch nicht abgerechnet: <strong class="num">${eur(toBill)}</strong> aus ${billable().length} durchgeführten Terminen. <button class="btn sm" data-go2="rechnungen">Jetzt abrechnen</button></div>` : ""}
+    <div class="panel chart-card">
+      <div class="chart-head"><div><h2>Umsatz pro Monat ${y}</h2><p class="muted small" style="margin:.15rem 0 0">Nach Rechnungsdatum, ohne stornierte Rechnungen</p></div>
+        <div class="legend-row"><span><i class="sw" style="background:var(--c1)"></i>Bezahlt</span><span><i class="sw" style="background:var(--c2)"></i>Offen</span></div></div>
+      <div class="chart" id="chMonth"></div>
+      <details class="tbl-toggle"><summary>Als Tabelle anzeigen</summary>
+        <div class="table-wrap"><table><thead><tr><th>Monat</th><th class="r">Rechnungen</th><th class="r">Bezahlt</th><th class="r">Offen</th><th class="r">Gesamt</th></tr></thead>
+        <tbody>${st.months.map((m, i) => `<tr><td>${MONTHS_LONG[i]}</td><td class="r num">${m.count}</td><td class="r num">${eur(m.paid)}</td><td class="r num">${eur(m.open)}</td><td class="r num"><strong>${eur(m.paid + m.open)}</strong></td></tr>`).join("")}
+        <tr><td><strong>Summe</strong></td><td class="r num">${st.inv.length}</td><td class="r num">${eur(st.paid)}</td><td class="r num">${eur(st.open)}</td><td class="r num"><strong>${eur(st.total)}</strong></td></tr></tbody></table></div>
+      </details>
+    </div>
+    <div class="panel chart-card" style="margin-top:16px">
+      <div class="chart-head"><div><h2>Umsatz nach Leistung ${y}</h2><p class="muted small" style="margin:.15rem 0 0">Welche Behandlungen tragen am meisten bei</p></div></div>
+      <div class="chart" id="chSvc"></div>
+    </div>`;
+  $$("[data-year]").forEach((b) => (b.onclick = () => { UI.statYear = +b.dataset.year; render(); }));
+  $$("[data-go2]").forEach((b) => (b.onclick = () => go(b.dataset.go2)));
+  drawMonthly($("#chMonth"), st.months, y);
+  drawServices($("#chSvc"), Object.entries(st.bySvc).sort((a, b) => b[1] - a[1]), st.total);
+}
+
+function drawMonthly(el, months, y) {
+  const W = Math.max(300, el.clientWidth), H = W < 500 ? 220 : 280, m = { t: 24, r: 8, b: 28, l: W < 500 ? 40 : 56 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const totals = months.map((x) => x.paid + x.open), max = Math.max(...totals, 1);
+  const step = niceStep(max / 4), top = Math.ceil(max / step) * step;
+  const sy = (v) => m.t + ih - (v / top) * ih, bw = iw / 12, barW = Math.min(36, bw * 0.62);
+  const now = new Date(); const future = (i) => y === now.getFullYear() && i > now.getMonth();
+  const maxI = totals.indexOf(Math.max(...totals));
+  let g = "";
+  for (let v = 0; v <= top + 0.001; v += step) g += `<line x1="${m.l}" x2="${W - m.r}" y1="${sy(v)}" y2="${sy(v)}" class="${v === 0 ? "axis" : "grid"}"/><text x="${m.l - 8}" y="${sy(v) + 4}" text-anchor="end" class="tick">${W < 500 ? eurShort(v) : eur0(v)}</text>`;
+  let bars = "";
+  months.forEach((x, i) => {
+    const cx = m.l + bw * i + bw / 2, x0 = cx - barW / 2, hp = (x.paid / top) * ih, ho = (x.open / top) * ih, gap = hp > 0 && ho > 0 ? 2 : 0;
+    if (hp > 0) bars += ho > 0 ? `<rect x="${x0}" y="${sy(x.paid)}" width="${barW}" height="${hp}" fill="var(--c1)"/>` : `<path d="${roundTop(x0, sy(x.paid), barW, hp, 4)}" fill="var(--c1)"/>`;
+    if (ho > 0) bars += `<path d="${roundTop(x0, sy(x.paid + x.open), barW, Math.max(0, ho - gap), 4)}" fill="var(--c2)"/>`;
+    if (future(i)) bars += `<text x="${cx}" y="${sy(0) - 6}" text-anchor="middle" class="tick">–</text>`;
+    bars += `<text x="${cx}" y="${H - 8}" text-anchor="middle" class="tick">${MONTHS[i]}</text>`;
+    bars += `<rect class="hit" data-i="${i}" x="${m.l + bw * i}" y="${m.t}" width="${bw}" height="${ih}" fill="transparent"/>`;
+  });
+  const lbl = totals[maxI] > 0 ? `<text x="${m.l + bw * maxI + bw / 2}" y="${sy(totals[maxI]) - 7}" text-anchor="middle" class="dlabel">${eur0(totals[maxI])}</text>` : "";
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Umsatz pro Monat ${y}, gestapelt nach bezahlt und offen"><rect id="hl" x="${m.l}" y="${m.t}" width="${bw}" height="${ih}" class="hl" style="display:none"/>${g}${bars}${lbl}</svg><div class="tip" hidden></div>`;
+  const tip = $(".tip", el), hl = $("#hl", el);
+  $$(".hit", el).forEach((r) => {
+    const show = () => {
+      const i = +r.dataset.i, x = months[i]; hl.setAttribute("x", m.l + bw * i); hl.style.display = "";
+      tip.innerHTML = `<strong>${MONTHS_LONG[i]} ${y}</strong><div class="tr"><i class="sw" style="background:var(--c1)"></i>Bezahlt<span class="num">${eur(x.paid)}</span></div><div class="tr"><i class="sw" style="background:var(--c2)"></i>Offen<span class="num">${eur(x.open)}</span></div><div class="tr tot">Gesamt<span class="num">${eur(x.paid + x.open)}</span></div><div class="muted" style="font-size:.8rem">${x.count} Rechnung${x.count === 1 ? "" : "en"}</div>`;
+      tip.hidden = false; const cx = m.l + bw * i + bw / 2, tw = tip.offsetWidth; let left = cx + 12; if (left + tw > W) left = cx - 12 - tw;
+      tip.style.left = Math.max(0, left) + "px"; tip.style.top = m.t + "px";
+    };
+    r.addEventListener("mouseenter", show); r.addEventListener("click", show);
+    r.addEventListener("mouseleave", () => { tip.hidden = true; hl.style.display = "none"; });
+  });
+}
+function drawServices(el, rows, total) {
+  if (!rows.length) { el.innerHTML = '<div class="empty">Für dieses Jahr gibt es noch keine Rechnungen.</div>'; return; }
+  const W = Math.max(300, el.clientWidth), rowH = 34, labelW = Math.min(220, W * 0.42), valW = W < 500 ? 64 : 120;
+  const H = rows.length * rowH + 8, iw = W - labelW - valW - 8, max = rows[0][1], maxCh = Math.floor((labelW - 12) / 6.6);
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Umsatz nach Leistung">${rows.map(([name, v], i) => {
+    const y = 4 + i * rowH, w = Math.max(2, (v / max) * iw), pct = ((v / total) * 100).toLocaleString("de-DE", { maximumFractionDigits: 0 });
+    return `<g><title>${esc(name)}: ${eur(v)} (${pct} %)</title>
+      <text x="${labelW - 10}" y="${y + rowH / 2 + 4}" text-anchor="end" class="slabel">${esc(name.length > maxCh ? name.slice(0, maxCh - 1) + "…" : name)}</text>
+      <path d="${roundRight(labelW, y + 7, w, rowH - 14, 4)}" fill="var(--c1)"/>
+      <text x="${labelW + w + 8}" y="${y + rowH / 2 + 4}" class="dlabel">${W < 500 ? eurShort(v) : eur0(v) + " · " + pct + " %"}</text></g>`;
+  }).join("")}</svg>`;
+}
+let resizeT;
+window.addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(() => { if (ST.UI.route === "statistik" && ST.S && $("#chMonth")) render(); }, 150); });
+

@@ -1,0 +1,22 @@
+// Kleine Hilfsfunktionen (Datum, Geld, DOM)
+export const $ = (s, r = document) => r.querySelector(s);
+export const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+export const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+export const eur = (n) => new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(n || 0);
+export const eur0 = (n) => new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(n || 0);
+export const eurPdf = (n) => new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0) + " EUR";
+export const pad = (n) => String(n).padStart(2, "0");
+export const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+export const hm = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+export const parseLocal = (s) => { const [d, t = "00:00"] = s.split("T"); const [y, m, da] = d.split("-").map(Number); const [h, mi] = t.split(":").map(Number); return new Date(y, m - 1, da, h || 0, mi || 0); };
+export const toLocalStr = (d) => `${ymd(d)}T${hm(d)}`;
+export const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+export const addMin = (d, n) => new Date(d.getTime() + n * 60000);
+export const startOfWeek = (d) => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); return addDays(x, -((x.getDay() + 6) % 7)); };
+export const fmtDate = (d) => d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+export const fmtDay = (d) => d.toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit" });
+export const fmtTs = (s) => s ? new Date(s).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "–";
+export const WD = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+export const MONTHS = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
+export const MONTHS_LONG = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+export const validEmail = (s) => /^\S+@\S+\.\S+$/.test(s);
