@@ -1,7 +1,8 @@
 // Kalender: Tag, Woche, Monat
 import { $, $$, esc, pad, ymd, hm, parseLocal, toLocalStr, addDays, addMin, startOfWeek, fmtDate, WD, MONTHS_LONG } from "./util.js";
-import { ST, render, go, setView, STATUS, pat, pname, apptTitle } from "./state.js";
+import { ST, render, go, setView, STATUS, pat, loc, pname, apptTitle } from "./state.js";
 import { openAppt } from "./records.js";
+import { openVoucher } from "./billing.js";
 
 const DAY_START = 7, DAY_END = 21;
 
@@ -14,7 +15,7 @@ export function calendarView(main) {
     : (() => { const d0 = startOfWeek(UI.cursor); return `${fmtDate(d0)} – ${fmtDate(addDays(d0, 5))}`; })();
 
   main.innerHTML = `
-    <div class="page-head"><h1>Kalender</h1><span class="spacer"></span><button class="btn primary" id="newAppt">+ Neuer Termin</button></div>
+    <div class="page-head"><h1>Kalender</h1><span class="spacer"></span><button class="btn" id="newVoucher">+ Neuer Gutschein</button><button class="btn primary" id="newAppt">+ Neuer Termin</button></div>
     ${(!S.services.length || !S.practice.street) ? `<div class="alert info onboard"><strong>Erste Schritte:</strong>
       ${!S.practice.street ? '<button class="btn sm" data-go2="einstellungen">Praxisdaten für die Rechnung ergänzen</button>' : ""}
       ${!S.services.length ? '<button class="btn sm" data-go2="leistungen">Erste Leistung mit Preis anlegen</button>' : ""}</div>` : ""}
@@ -35,6 +36,7 @@ export function calendarView(main) {
   if (view === "monat") monthGrid($("#calHost"), todayStr); else timeGrid($("#calHost"), view, todayStr);
 
   $("#newAppt").onclick = () => { const d = new Date(); d.setMinutes(0, 0, 0); d.setHours(Math.min(Math.max(d.getHours() + 1, 8), 18)); openAppt(null, toLocalStr(d)); };
+  $("#newVoucher").onclick = () => openVoucher(null);
   const move = (dir) => {
     if (view === "tag") UI.cursor = addDays(UI.cursor, dir);
     else if (view === "woche") UI.cursor = addDays(UI.cursor, 7 * dir);
@@ -76,8 +78,8 @@ function timeGrid(host, view, todayStr) {
       el.className = `ev s-${a.status}${a.invoiceId ? " billed" : ""}`;
       el.style.top = top + "px"; el.style.height = h + "px";
       if (nL > 1) { el.style.left = `calc(${(lane.get(a.id) / nL) * 100}% + 3px)`; el.style.right = "auto"; el.style.width = `calc(${100 / nL}% - 6px)`; }
-      el.innerHTML = `<b>${hm(s)} ${esc(pname(pat(a.patientId)))}</b><span>${esc(apptTitle(a))}</span>`;
-      el.title = `${hm(s)}–${hm(addMin(s, a.duration))} · ${pname(pat(a.patientId))} · ${STATUS[a.status]}`;
+      el.innerHTML = `<b>${hm(s)} ${esc(pname(pat(a.patientId)))}</b><span>${esc(apptTitle(a))}${a.locationId && loc(a.locationId) ? " · " + esc(loc(a.locationId).name) : ""}</span>`;
+      el.title = `${hm(s)}–${hm(addMin(s, a.duration))} · ${pname(pat(a.patientId))}${a.locationId && loc(a.locationId) ? " · " + loc(a.locationId).name : ""} · ${STATUS[a.status]}${a.needsInvoice ? "" : " · ohne Rechnung"}`;
       el.onclick = (ev) => { ev.stopPropagation(); openAppt(a.id); };
       col.appendChild(el);
     });

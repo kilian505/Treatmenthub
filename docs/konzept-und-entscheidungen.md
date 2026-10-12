@@ -1,6 +1,6 @@
 # Treatment Manager – Konzept & Entscheidungen
 
-Stand: 06.10.2026
+Stand: 12.10.2026
 Prototyp (Version 3): https://claude.ai/artifact/BxnRKon9fBJZjVaufrkmnK
 Code: Mac → Dokumente/Treatment Manager · Supabase-Projekt `treatment-manager` (ID zmrykzunjryvqrtlhhhn, Frankfurt, Gratis-Plan)
 
@@ -24,6 +24,9 @@ Code: Mac → Dokumente/Treatment Manager · Supabase-Projekt `treatment-manager
 - `appointments`: Termine (Start, Dauer, Leistungen als uuid[], Status, Notiz, Rechnungs-Verknüpfung)
 - `invoices`: unveränderbare Rechnungen mit Snapshot von Patient, Praxis und Positionen; Status offen/bezahlt/storniert
 - `invoice_counters`: fortlaufende Nummer je Praxis und Jahr
+- `locations`: Behandlungsorte (z. B. Hotels), selbst gepflegt; `appointments.location_id`
+- `appointments.needs_invoice`: „Rechnung ja/nein“. Bei „nein“ nicht abrechenbar, zählt aber in der Statistik (Preis der Leistungen, nach Termindatum)
+- `vouchers` + `voucher_counters`: Gutscheine mit Nummer GU+Jahr+lfd. Nr. (GU202601), Name, Betrag, Leistung; nur über `create_voucher` anlegbar, Nummer/Datum unveränderbar
 - Funktionen: `create_invoice`, `admin_list_accounts`, `admin_set_status`; Edge Function `admin-accounts` (invite, reject)
 
 ## Sicherheitstests (06.10.2026, alle bestanden)

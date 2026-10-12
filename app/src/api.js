@@ -62,8 +62,12 @@ const patFrom = (r) => ({ id: r.id, first: r.first_name, last: r.last_name, stre
   phone: r.phone, email: r.email, createdAt: r.created_at });
 const patTo = (p) => ({ first_name: p.first, last_name: p.last, street: p.street, zip: p.zip, city: p.city, birth_date: p.birth || null, phone: p.phone || "", email: p.email || "" });
 const apptFrom = (r) => ({ id: r.id, patientId: r.patient_id, start: toLocalStr(new Date(r.starts_at)), duration: r.duration, serviceIds: r.service_ids || [],
-  status: r.status, note: r.note || "", invoiceId: r.invoice_id });
-const apptTo = (a) => ({ patient_id: a.patientId, starts_at: parseLocal(a.start).toISOString(), duration: a.duration, service_ids: a.serviceIds, status: a.status, note: a.note || "" });
+  status: r.status, note: r.note || "", invoiceId: r.invoice_id, locationId: r.location_id || null, needsInvoice: r.needs_invoice !== false });
+const apptTo = (a) => ({ patient_id: a.patientId, starts_at: parseLocal(a.start).toISOString(), duration: a.duration, service_ids: a.serviceIds, status: a.status, note: a.note || "",
+  location_id: a.locationId || null, needs_invoice: a.needsInvoice !== false });
+const locFrom = (r) => ({ id: r.id, name: r.name, active: r.active });
+const locTo = (l) => ({ name: l.name, active: l.active !== false });
+const vouFrom = (r) => ({ id: r.id, number: r.number, year: r.year, seq: r.seq, recipient: r.recipient, amount: Number(r.amount), service: r.service || "", date: r.issued_on });
 const invFrom = (r) => ({ id: r.id, number: r.number, patientId: r.patient_id, date: r.invoice_date, payDays: r.pay_days, patient: r.patient,
   practice: practiceFrom(r.practice), lines: (r.lines || []).map((l) => ({ ...l, price: Number(l.price), qty: Number(l.qty) })), total: Number(r.total),
   status: r.status, paidAt: r.paid_at, cancelledAt: r.cancelled_at, period: [r.period_start, r.period_end] });
@@ -79,13 +83,15 @@ async function fetchAll(table, order) {
 
 /* ---------------- Praxisdaten ---------------- */
 export async function loadPractice(profile) {
-  const [ps, services, patients, appts, invoices] = await Promise.all([
+  const [ps, services, patients, appts, invoices, locations, vouchers] = await Promise.all([
     sb.from("practice_settings").select("*").maybeSingle().then(check),
     fetchAll("services", "created_at"), fetchAll("patients", "created_at"),
     fetchAll("appointments", "starts_at"), fetchAll("invoices", "created_at"),
+    fetchAll("locations", "created_at"), fetchAll("vouchers", "created_at"),
   ]);
   const practice = ps ? practiceFrom(ps) : practiceFrom({ name: profile.practice_name, owner_name: profile.full_name, title: profile.title, email: profile.email });
-  return { practice, practiceSaved: !!ps, services: services.map(svcFrom), patients: patients.map(patFrom), appts: appts.map(apptFrom), invoices: invoices.map(invFrom) };
+  return { practice, practiceSaved: !!ps, services: services.map(svcFrom), patients: patients.map(patFrom), appts: appts.map(apptFrom), invoices: invoices.map(invFrom),
+    locations: locations.map(locFrom), vouchers: vouchers.map(vouFrom) };
 }
 export const savePractice = async (p) => practiceFrom(check(await sb.from("practice_settings").upsert(practiceTo(p)).select().single()));
 
@@ -111,6 +117,20 @@ export async function createInvoice(patientId, apptIds, date) {
   if (date) args.p_date = date;
   return invFrom(check(await sb.rpc("create_invoice", args)));
 }
+export async function saveLocation(l) {
+  const q = l.id ? sb.from("locations").update(locTo(l)).eq("id", l.id) : sb.from("locations").insert(locTo(l));
+  return locFrom(check(await q.select().single()));
+}
+export const deleteLocation = async (id) => check(await sb.from("locations").delete().eq("id", id));
+
+export async function createVoucher(v) {
+  const args = { p_recipient: v.recipient, p_amount: v.amount, p_service: v.service || "" };
+  if (v.date) args.p_date = v.date;
+  return vouFrom(check(await sb.rpc("create_voucher", args)));
+}
+export const updateVoucher = async (v) =>
+  vouFrom(check(await sb.from("vouchers").update({ recipient: v.recipient, amount: v.amount, service: v.service || "" }).eq("id", v.id).select().single()));
+
 export const setInvoiceStatus = async (id, status) => invFrom(check(await sb.from("invoices").update({ status }).eq("id", id).select().single()));
 
 /* Bulk-Import für Beispieldaten (nur für leere Test-Praxen) */
