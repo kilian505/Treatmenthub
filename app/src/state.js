@@ -8,7 +8,7 @@ export const ST = {
     route: "kalender", auth: "login",
     cursor: new Date(),
     view: window.matchMedia("(max-width:760px)").matches ? "tag" : "woche",
-    patientQuery: "", statYear: new Date().getFullYear(), acctFilter: "alle",
+    patientQuery: "", billTab: "rechnungen", statYear: new Date().getFullYear(), acctFilter: "alle",
   },
 };
 try { const r = localStorage.getItem("tm:route"); if (r) ST.UI.route = r; const v = localStorage.getItem("tm:view"); if (v) ST.UI.view = v; } catch (_) {}
@@ -26,7 +26,11 @@ export const svc = (id) => ST.S.services.find((s) => s.id === id);
 export const pname = (p) => (p ? `${p.first} ${p.last}` : "Unbekannt");
 export const apptTotal = (a) => a.serviceIds.reduce((t, id) => t + (svc(id)?.price || 0), 0);
 export const apptTitle = (a) => a.serviceIds.map((id) => svc(id)?.name || "–").join(" + ");
-export const billable = () => ST.S.appts.filter((a) => a.status === "durchgefuehrt" && !a.invoiceId && a.serviceIds.length);
+export const loc = (id) => ST.S.locations.find((l) => l.id === id);
+export const addr = (p) => [p?.street, [p?.zip, p?.city].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+export const billable = () => ST.S.appts.filter((a) => a.status === "durchgefuehrt" && a.needsInvoice && !a.invoiceId && a.serviceIds.length);
+// Durchgeführte Behandlungen, für die bewusst keine Rechnung erstellt wird (zählen trotzdem in der Statistik)
+export const unbilledDone = () => ST.S.appts.filter((a) => a.status === "durchgefuehrt" && !a.needsInvoice);
 export function overlaps(start, duration, ignoreId) {
   const s = parseLocal(start), e = addMin(s, duration);
   return ST.S.appts.filter((a) => a.id !== ignoreId && a.status !== "abgesagt").filter((a) => {

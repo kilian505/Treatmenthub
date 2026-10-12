@@ -1,6 +1,6 @@
 // Einstieg: Anmeldung, App-Rahmen, Praxis-Einstellungen, Admin-Bereich
 import { $, $$, esc, ymd, addDays, toLocalStr, parseLocal, fmtDate, fmtTs, validEmail, addMin, startOfWeek } from "./util.js";
-import { ST, hooks, render, go, toast, toastError, modal, closeModal, busy, armed } from "./state.js";
+import { ST, hooks, render, go, toast, toastError, modal, closeModal, busy, armed, billable } from "./state.js";
 import * as api from "./api.js";
 import { calendarView } from "./calendar.js";
 import { patientsView, servicesView } from "./records.js";
@@ -60,7 +60,7 @@ hooks.render = function () {
   const isAdmin = ST.profile.role === "admin";
   const nav = isAdmin ? NAV_ADMIN : NAV_USER;
   if (!nav.some(([k]) => k === ST.UI.route)) ST.UI.route = nav[0][0];
-  const badge = (k) => { const n = k === "rechnungen" ? ST.S.appts.filter((a) => a.status === "durchgefuehrt" && !a.invoiceId && a.serviceIds.length).length : k === "konten" && adminAccounts ? adminAccounts.filter((a) => a.status === "pending").length : 0; return n ? `<span class="badge num">${n}</span>` : ""; };
+  const badge = (k) => { const n = k === "rechnungen" ? billable().length : k === "konten" && adminAccounts ? adminAccounts.filter((a) => a.status === "pending").length : 0; return n ? `<span class="badge num">${n}</span>` : ""; };
   app.innerHTML = `
   <div class="shell">
     <aside class="side">
