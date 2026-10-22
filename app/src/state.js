@@ -69,7 +69,7 @@ export function modal(html, { wide = false } = {}) {
   const first = ov.querySelector("input,select,textarea,button"); if (first) setTimeout(() => first.focus(), 20);
   return ov;
 }
-export function closeModal() { const o = $("#overlay"); if (o) o.remove(); }
+export function closeModal() { const o = $("#overlay"); if (o) { o.remove(); o.onclose?.(); } }
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
 
 // Button während einer Server-Aktion sperren
