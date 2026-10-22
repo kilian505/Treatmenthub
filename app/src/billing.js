@@ -125,20 +125,15 @@ export function openCreateInvoice(pid, list) {
 
 // Rechnungslayout wie Manuelas bisherige Rechnungen: Logo und Absender rechts, Positionen als „2 x Leistung á € 78,00“
 const num2 = (n) => new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0);
-const ddmm = (d) => fmtDate(parseLocal(d)).slice(0, 6);
-// Gleiche Leistung zum gleichen Preis zusammenfassen, Behandlungstage anhängen
+// Gleiche Leistung zum gleichen Preis zusammenfassen (ohne Behandlungsdaten)
 function invoiceItems(i) {
   const groups = [];
   i.lines.forEach((l) => {
     let g = groups.find((x) => x.name === l.name && x.price === l.price);
-    if (!g) groups.push((g = { name: l.name, price: l.price, qty: 0, dates: [] }));
-    g.qty += l.qty; if (!g.dates.includes(l.date)) g.dates.push(l.date);
+    if (!g) groups.push((g = { name: l.name, price: l.price, qty: 0 }));
+    g.qty += l.qty;
   });
-  return groups.map((g) => {
-    const ds = g.dates.slice().sort(), last = fmtDate(parseLocal(ds[ds.length - 1]));
-    const when = ds.length === 1 ? last : ds.slice(0, -1).map(ddmm).join(", ") + " und " + last;
-    return { text: `${g.qty} x ${g.name}${g.qty > 1 ? ` á € ${num2(g.price)}` : ""} am ${when}`, sum: g.qty * g.price };
-  });
+  return groups.map((g) => ({ text: `${g.qty} x ${g.name}${g.qty > 1 ? ` á € ${num2(g.price)}` : ""}`, sum: g.qty * g.price }));
 }
 const taxIdLabel = (t) => (/^\d{11}$/.test(t.replace(/\s/g, "")) ? "Steuer-ID" : "Steuernummer");
 const payNote = (i) => (i.payDays > 0 ? `Die Rechnung ist innerhalb von ${i.payDays} Tagen zur Zahlung fällig.` : "");
@@ -169,12 +164,17 @@ export function openInvoice(id) {
   const i = S.invoices.find((x) => x.id === id); if (!i) return;
   modal(`
     <div class="modal-head"><h2>Rechnung ${esc(i.number)}</h2><span class="pill s-${i.status}">${INV_STATUS[i.status]}</span><button class="btn ghost sm" data-close aria-label="Schließen">✕</button></div>
-    <div class="modal-body"><div class="paper-wrap">${invoiceHtml(i)}</div>
+    <div class="modal-body">
+      <div id="noBox" class="panel" hidden style="padding:12px;margin-bottom:12px"><div class="field"><label for="inv-seq">Neue Rechnungsnummer</label>
+        <div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap"><span class="num">${i.year}-</span><input id="inv-seq" type="number" min="1" step="1" style="max-width:110px" value="${i.seq}">
+          <button class="btn primary sm" id="noSave">Übernehmen</button><button class="btn sm" id="noCancel">Abbrechen</button></div>
+        <span class="muted small">Nur Nummern, die noch nicht vergeben sind. Rechnungen, die schon verschickt wurden, besser nicht umnummerieren.</span></div></div>
+      <div class="paper-wrap">${invoiceHtml(i)}</div>
       ${i.status === "storniert" ? `<div class="alert info">Storniert am ${fmtDate(parseLocal(i.cancelledAt))}. Die Termine sind wieder abrechenbar. Die Rechnungsnummer bleibt vergeben.</div>`
-        : `<div class="alert info">Erstellte Rechnungen lassen sich nicht mehr bearbeiten oder löschen, nur stornieren. So bleibt die Nummernfolge lückenlos.</div>`}
+        : `<div class="alert info">Erstellte Rechnungen lassen sich nicht mehr bearbeiten oder löschen, nur stornieren. Die Rechnungsnummer kann über „Nummer ändern“ angepasst werden.</div>`}
     </div>
     <div class="modal-foot">
-      <div class="left">${i.status === "offen" ? '<button class="btn" id="paid">Als bezahlt markieren</button>' : ""}${i.status === "bezahlt" ? '<button class="btn" id="unpaid">Zahlung zurücknehmen</button>' : ""}${i.status !== "storniert" ? '<button class="btn danger" id="storno">Stornieren</button>' : ""}</div>
+      <div class="left">${i.status === "offen" ? '<button class="btn" id="paid">Als bezahlt markieren</button>' : ""}${i.status === "bezahlt" ? '<button class="btn" id="unpaid">Zahlung zurücknehmen</button>' : ""}${i.status !== "storniert" ? '<button class="btn" id="chgNo">Nummer ändern</button><button class="btn danger" id="storno">Stornieren</button>' : ""}</div>
       <button class="btn" data-close>Schließen</button><button class="btn primary" id="pdf">PDF herunterladen</button>
     </div>`, { wide: true });
   const setStatus = (btn, status, msg) => busy(btn, async () => {
@@ -189,6 +189,19 @@ export function openInvoice(id) {
   const unp = $("#unpaid"); if (unp) unp.onclick = () => setStatus(unp, "offen");
   const st = $("#storno"); if (st) st.onclick = () => { if (armed(st, "Wirklich stornieren?")) setStatus(st, "storniert", `Rechnung ${i.number} storniert`); };
   $("#pdf").onclick = () => downloadPdf(i);
+  const chg = $("#chgNo");
+  if (chg) chg.onclick = () => { $("#noBox").hidden = false; $("#inv-seq").focus(); $("#inv-seq").select(); };
+  $("#noCancel").onclick = () => ($("#noBox").hidden = true);
+  const ns = $("#noSave");
+  ns.onclick = () => busy(ns, async () => {
+    try {
+      const seq = parseInt($("#inv-seq").value);
+      if (!(seq >= 1)) throw new Error("Bitte eine gültige Nummer eintragen.");
+      const old = i.number; Object.assign(i, await api.setInvoiceNumber(i.id, seq));
+      render(); openInvoice(i.id); if (i.number !== old) toast(`Rechnungsnummer geändert: ${old} → ${i.number}`);
+    } catch (e) { toastError(e); }
+  });
+  $("#inv-seq").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); ns.click(); } };
 }
 
 function buildPdf(i) {

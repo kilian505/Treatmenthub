@@ -70,7 +70,7 @@ const apptTo = (a) => ({ patient_id: a.patientId, starts_at: parseLocal(a.start)
 const locFrom = (r) => ({ id: r.id, name: r.name, active: r.active });
 const locTo = (l) => ({ name: l.name, active: l.active !== false });
 const vouFrom = (r) => ({ id: r.id, number: r.number, year: r.year, seq: r.seq, recipient: r.recipient, amount: Number(r.amount), service: r.service || "", date: r.issued_on });
-const invFrom = (r) => ({ id: r.id, number: r.number, patientId: r.patient_id, date: r.invoice_date, payDays: r.pay_days, patient: r.patient,
+const invFrom = (r) => ({ id: r.id, number: r.number, year: r.year, seq: r.seq, patientId: r.patient_id, date: r.invoice_date, payDays: r.pay_days, patient: r.patient,
   practice: practiceFrom(r.practice), lines: (r.lines || []).map((l) => ({ ...l, price: Number(l.price), qty: Number(l.qty) })), total: Number(r.total),
   status: r.status, paidAt: r.paid_at, cancelledAt: r.cancelled_at, period: [r.period_start, r.period_end], location: r.location || "" });
 
@@ -136,6 +136,7 @@ export const updateVoucher = async (v) =>
 
 // Rechnungsnummern: aktueller Stand und Start nach Umstieg aus einem anderen Rechnungsprogramm
 export const invoiceCounter = async (year) => check(await sb.rpc("invoice_counter", { p_year: year }));
+export const setInvoiceNumber = async (id, seq) => invFrom(check(await sb.rpc("set_invoice_number", { p_invoice: id, p_seq: seq })));
 export const setInvoiceStart = async (year, last) => check(await sb.rpc("set_invoice_start", { p_year: year, p_last: last }));
 export const setInvoiceStatus = async (id, status) => invFrom(check(await sb.from("invoices").update({ status }).eq("id", id).select().single()));
 
