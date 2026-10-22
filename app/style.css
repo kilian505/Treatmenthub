@@ -256,3 +256,11 @@ body{margin:0}
 }
 .mdots i.own{background:var(--c3)}
 .pill.own{background:var(--surface-2);color:var(--fg);border-left:3px solid var(--c3)}
+.extra-days{display:flex;flex-direction:column;gap:.45rem;margin-top:.4rem;padding-top:.7rem;border-top:1px dashed var(--line)}
+.extra-row{flex-wrap:wrap}
+.extra-row input{border:1px solid var(--line);background:var(--surface);color:inherit;border-radius:8px;padding:.45rem .5rem;font:inherit}
+.extra-row select{min-width:200px}
+.ci-list{display:flex;flex-direction:column;gap:.3rem;margin:0;padding:0;list-style:none}
+.ci-list label{display:flex;gap:.55rem;align-items:baseline;cursor:pointer;font-weight:400;text-align:left}
+.ci-list input{width:auto;flex:none;margin:0}
+.ci-list{margin-top:.4rem}
