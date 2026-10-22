@@ -25,6 +25,8 @@ Code: Mac → Dokumente/Treatment Manager · Supabase-Projekt `treatment-manager
 - `invoices`: unveränderbare Rechnungen mit Snapshot von Patient, Praxis und Positionen; Status offen/bezahlt/storniert
 - `invoice_counters`: fortlaufende Nummer je Praxis und Jahr
 - `locations`: Behandlungsorte (z. B. Hotels), selbst gepflegt; `appointments.location_id`
+- `services.location_id`: Leistung gilt nur an diesem Ort (gleiche Behandlung, anderer Preis je Hotel); ohne Ort überall. Im Termin erscheinen nur Leistungen des gewählten Orts.
+- In der Oberfläche heißen Patienten „Kunden“ (Datenbank-Tabelle bleibt `patients`).
 - `appointments.needs_invoice`: „Rechnung ja/nein“. Bei „nein“ nicht abrechenbar, zählt aber in der Statistik (Preis der Leistungen, nach Termindatum)
 - `vouchers` + `voucher_counters`: Gutscheine mit Nummer GU+Jahr+lfd. Nr. (GU202601), Name, Betrag, Leistung; nur über `create_voucher` anlegbar, Nummer/Datum unveränderbar
 - Funktionen: `create_invoice`, `admin_list_accounts`, `admin_set_status`; Edge Function `admin-accounts` (invite, reject)

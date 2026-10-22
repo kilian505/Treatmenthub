@@ -56,8 +56,8 @@ const practiceFrom = (r = {}) => ({ name: r.name || "", owner: r.owner_name || "
   taxMode: r.tax_mode || "p4", payDays: r.pay_days ?? 14 });
 const practiceTo = (p) => ({ name: p.name, owner_name: p.owner, title: p.title, street: p.street, zip: p.zip, city: p.city, phone: p.phone,
   email: p.email, tax_no: p.taxNo, iban: p.iban, bank: p.bank, tax_mode: p.taxMode, pay_days: p.payDays, updated_at: new Date().toISOString() });
-const svcFrom = (r) => ({ id: r.id, name: r.name, code: r.code, duration: r.duration, price: Number(r.price), active: r.active });
-const svcTo = (s) => ({ name: s.name, code: s.code || "", duration: s.duration, price: s.price, active: s.active !== false });
+const svcFrom = (r) => ({ id: r.id, name: r.name, code: r.code, duration: r.duration, price: Number(r.price), active: r.active, locationId: r.location_id || null });
+const svcTo = (s) => ({ name: s.name, code: s.code || "", duration: s.duration, price: s.price, active: s.active !== false, location_id: s.locationId || null });
 const patFrom = (r) => ({ id: r.id, first: r.first_name, last: r.last_name, street: r.street, zip: r.zip, city: r.city, birth: r.birth_date || "",
   phone: r.phone, email: r.email, createdAt: r.created_at });
 const patTo = (p) => ({ first_name: p.first, last_name: p.last, street: p.street, zip: p.zip, city: p.city, birth_date: p.birth || null, phone: p.phone || "", email: p.email || "" });

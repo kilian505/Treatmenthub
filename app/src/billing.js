@@ -34,7 +34,7 @@ function unbilledView(host) {
     </div>
     <p class="muted" style="margin:0 0 12px;max-width:70ch">Termine, bei denen „Rechnung nein“ gewählt ist. Durchgeführte Behandlungen zählen in der Statistik mit, zum Preis der Leistung.</p>
     <div class="panel table-wrap"><table>
-      <thead><tr><th>Datum</th><th>Patient</th><th>Ort</th><th>Behandlung</th><th>Status</th><th class="r">Betrag</th></tr></thead>
+      <thead><tr><th>Datum</th><th>Kunde</th><th>Ort</th><th>Behandlung</th><th>Status</th><th class="r">Betrag</th></tr></thead>
       <tbody>${list.map((a) => `<tr class="click" data-aid="${a.id}"><td class="num">${fmtDate(parseLocal(a.start))} ${a.start.slice(11, 16)}</td><td>${esc(pname(pat(a.patientId)))}</td><td>${esc(loc(a.locationId)?.name || "–")}</td><td>${esc(apptTitle(a))}</td><td><span class="pill s-${a.status}">${STATUS[a.status]}</span></td><td class="r num">${eur(apptTotal(a))}</td></tr>`).join("")
         || '<tr><td colspan="6" class="empty">Noch keine Termine ohne Rechnung. Im Termin wählen Sie dafür „Rechnung nein“.</td></tr>'}</tbody>
     </table></div>`;
@@ -62,7 +62,7 @@ function invoiceListView(main) {
       : `<div class="panel empty" style="margin-bottom:22px">Alle durchgeführten Termine sind abgerechnet.</div>`}
     <h2 style="margin-bottom:10px">Alle Rechnungen</h2>
     <div class="panel table-wrap"><table>
-      <thead><tr><th>Nummer</th><th>Datum</th><th>Patient</th><th>Fällig</th><th>Status</th><th class="r">Betrag</th></tr></thead>
+      <thead><tr><th>Nummer</th><th>Datum</th><th>Kunde</th><th>Fällig</th><th>Status</th><th class="r">Betrag</th></tr></thead>
       <tbody>${S.invoices.slice().sort((a, b) => b.date.localeCompare(a.date) || b.number.localeCompare(a.number)).map((i) => {
         const due = addDays(parseLocal(i.date), i.payDays), over = i.status === "offen" && due < new Date();
         return `<tr class="click" data-iid="${i.id}"><td class="num"><strong>${i.number}</strong></td><td class="num">${fmtDate(parseLocal(i.date))}</td><td>${esc(i.patient.name)}</td><td class="num">${i.status === "offen" ? fmtDate(due) + (over ? ' <span class="pill s-ausgefallen">überfällig</span>' : "") : "–"}</td><td><span class="pill s-${i.status}">${INV_STATUS[i.status]}</span></td><td class="r num">${eur(i.total)}</td></tr>`;
@@ -138,7 +138,7 @@ function buildPdf(i) {
   doc.setFont("helvetica", "bold"); doc.text(pr.name || "", R, 22, { align: "right" });
   doc.setFont("helvetica", "normal"); doc.setFontSize(9);
   doc.text([`${pr.owner}${pr.title ? ", " + pr.title : ""}`, pr.street, `${pr.zip} ${pr.city}`, pr.phone, pr.email].filter(Boolean), R, 27, { align: "right" });
-  doc.text([`Rechnungsnr.: ${i.number}`, `Datum: ${fmtDate(parseLocal(i.date))}`].concat(i.patient.birth ? [`Geb.-Datum Patient: ${fmtDate(parseLocal(i.patient.birth))}`] : []), R, 58, { align: "right" });
+  doc.text([`Rechnungsnr.: ${i.number}`, `Datum: ${fmtDate(parseLocal(i.date))}`].concat(i.patient.birth ? [`Geb.-Datum: ${fmtDate(parseLocal(i.patient.birth))}`] : []), R, 58, { align: "right" });
   doc.setFont("helvetica", "bold"); doc.setFontSize(15);
   doc.text(`Rechnung${i.status === "storniert" ? " (storniert)" : ""}`, L, 95);
   doc.setFont("helvetica", "normal"); doc.setFontSize(9.5);
@@ -196,7 +196,7 @@ export function openVoucher(id) {
   modal(`
     <div class="modal-head"><h2>${existing ? "Gutschein " + esc(v.number) : "Neuer Gutschein"}</h2><button class="btn ghost sm" data-close aria-label="Schließen">✕</button></div>
     <form class="modal-body" id="vfForm" novalidate>
-      <div class="field"><label for="vf-name">Name des Patienten *</label><input id="vf-name" value="${esc(v.recipient)}" autocomplete="off" list="vf-pats"></div>
+      <div class="field"><label for="vf-name">Name des Kunden *</label><input id="vf-name" value="${esc(v.recipient)}" autocomplete="off" list="vf-pats"></div>
       <datalist id="vf-pats">${S.patients.map((p) => `<option value="${esc(pname(p))}">`).join("")}</datalist>
       <div class="grid2" style="grid-template-columns:2fr 1fr">
         <div class="field"><label for="vf-svc">Leistung</label><input id="vf-svc" value="${esc(v.service)}" autocomplete="off" list="vf-svcs" placeholder="z. B. Massage 60 Minuten"></div>

@@ -15,7 +15,7 @@ const ICONS = {
   einstellungen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 21v-6M4 11V3M12 21v-9M12 8V3M20 21v-4M20 13V3M1 15h6M9 8h6M17 17h6"/></svg>',
   konten: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>',
 };
-const NAV_USER = [["kalender", "Kalender"], ["patienten", "Patienten"], ["leistungen", "Leistungen"], ["rechnungen", "Rechnungen"], ["statistik", "Statistik"], ["einstellungen", "Praxis"]];
+const NAV_USER = [["kalender", "Kalender"], ["patienten", "Kunden"], ["leistungen", "Leistungen"], ["rechnungen", "Rechnungen"], ["statistik", "Statistik"], ["einstellungen", "Praxis"]];
 const NAV_ADMIN = [["konten", "Konten"]];
 const VIEWS = { kalender: calendarView, patienten: patientsView, leistungen: servicesView, rechnungen: invoicesView, statistik: statsView, einstellungen: settingsView, konten: accountsView };
 const BRAND = `<div class="brand"><span class="brand-mark">${ICONS.leistungen.replace("<svg", '<svg width="18" height="18"')}</span>Treatment Manager</div>`;
@@ -105,7 +105,7 @@ function authView() {
     <button class="btn primary block" type="submit">Link senden</button>
     <p class="center"><button type="button" class="link" data-auth="login">Zurück zur Anmeldung</button></p></form></div>`;
   return `<div class="login"><form class="login-card" id="loginForm" novalidate>${BRAND}
-    <div><h1>Anmelden</h1><p class="muted" style="margin:.3rem 0 0">Termine, Patientenkartei und Rechnungen für Ihre Praxis.</p></div>
+    <div><h1>Anmelden</h1><p class="muted" style="margin:.3rem 0 0">Termine, Kundenkartei und Rechnungen für Ihre Praxis.</p></div>
     <div class="field"><label for="lg-mail">E-Mail</label><input id="lg-mail" type="email" autocomplete="email"></div>
     <div class="field"><label for="lg-pw">Passwort</label><input id="lg-pw" type="password" autocomplete="current-password"></div>
     <div id="err"></div>
@@ -215,7 +215,7 @@ function settingsView(main) {
     </form>
     ${empty ? `<div class="panel" style="padding:18px;margin-top:16px;max-width:720px;display:flex;flex-direction:column;gap:.5rem">
       <h2>Zum Ausprobieren</h2>
-      <p class="muted" style="margin:0">Füllt Ihre noch leere Praxis mit erfundenen Beispieldaten aus den letzten Monaten: Leistungen, Patienten, Termine und Rechnungen. Nur für Testkonten gedacht, denn Rechnungen lassen sich danach nicht mehr löschen.</p>
+      <p class="muted" style="margin:0">Füllt Ihre noch leere Praxis mit erfundenen Beispieldaten aus den letzten Monaten: Leistungen, Kunden, Termine und Rechnungen. Nur für Testkonten gedacht, denn Rechnungen lassen sich danach nicht mehr löschen.</p>
       <div><button class="btn" id="loadDemo">Beispieldaten laden</button></div><div id="demoMsg" class="muted small"></div>
     </div>` : ""}`;
   $("#stForm").addEventListener("submit", (e) => {
@@ -238,7 +238,7 @@ async function loadDemo(progress) {
     progress("Leistungen werden angelegt …");
     const svcs = [["Erstanamnese & Untersuchung", 60, 90], ["Folgebehandlung", 45, 65], ["Akupunktur", 30, 45], ["Schröpfmassage", 30, 40], ["Infusionstherapie", 45, 55], ["Telefonische Beratung", 15, 20]];
     const services = (await api.insertMany("services", svcs.map(([name, duration, price]) => ({ name, duration, price, code: "", active: true })), api.mappers.svcTo)).map(api.mappers.svcFrom);
-    progress("Patienten werden angelegt …");
+    progress("Kunden werden angelegt …");
     const P = [["Lena", "Beispiel", "Lindenstraße 12", "10115", "Berlin"], ["Jonas", "Muster", "Am Hang 3", "14467", "Potsdam"], ["Aylin", "Probe", "Gartenweg 8a", "10997", "Berlin"], ["Peter", "Testmann", "Bahnhofstr. 40", "12555", "Berlin"],
       ["Sofia", "Exempel", "Kastanienallee 7", "10435", "Berlin"], ["Karl", "Vorlage", "Dorfstraße 2", "15344", "Strausberg"], ["Mia", "Fiktiv", "Rosenweg 15", "12203", "Berlin"], ["Emre", "Platzhalter", "Sonnenallee 101", "12045", "Berlin"]];
     const patients = (await api.insertMany("patients", P.map(([first, last, street, zip, city]) => ({ first, last, street, zip, city, birth: "", phone: "", email: "" })), api.mappers.patTo)).map(api.mappers.patFrom);
@@ -319,7 +319,7 @@ async function accountsView(main) {
           ${a.status === "blocked" ? `<button class="btn sm" data-unblock="${a.id}">Entsperren</button>` : ""}
         </div></td></tr>`).join("") || '<tr><td colspan="6" class="empty">Keine Konten in dieser Ansicht.</td></tr>'}</tbody>
     </table></div>
-    <div class="alert info" style="margin-top:14px;max-width:80ch">Admins haben keinen Zugriff auf Patienten, Termine, Leistungen oder Rechnungen der Praxen und können weder Passwörter sehen noch vergeben. Das erzwingt die Datenbank selbst. Passwörter setzen die Praxen ausschließlich selbst, über den Einladungslink oder „Passwort vergessen“.</div>`;
+    <div class="alert info" style="margin-top:14px;max-width:80ch">Admins haben keinen Zugriff auf Kunden, Termine, Leistungen oder Rechnungen der Praxen und können weder Passwörter sehen noch vergeben. Das erzwingt die Datenbank selbst. Passwörter setzen die Praxen ausschließlich selbst, über den Einladungslink oder „Passwort vergessen“.</div>`;
   const refresh = async () => { adminAccounts = await api.admin.list(); render(); };
   const act = (btn, fn, msg) => busy(btn, async () => { try { await fn(); await refresh(); toast(msg); } catch (e) { toastError(e); } });
   const byId = (id) => adminAccounts.find((a) => a.id === id);

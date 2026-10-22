@@ -1,4 +1,4 @@
-// Termine, Patienten, Leistungen
+// Termine, Kunden, Leistungen
 import { $, $$, esc, eur, ymd, hm, parseLocal, toLocalStr, addMin, fmtDate, fmtDay } from "./util.js";
 import { ST, render, STATUS, INV_STATUS, pat, svc, loc, addr, pname, apptTotal, apptTitle, overlaps, toast, toastError, modal, closeModal, busy, armed } from "./state.js";
 import * as api from "./api.js";
@@ -19,7 +19,7 @@ export function openAppt(id, startStr, presetPatient) {
     <div class="modal-head"><h2>${existing ? "Termin" : "Neuer Termin"}</h2>${locked ? '<span class="pill s-bezahlt">abgerechnet</span>' : ""}<button class="btn ghost sm" data-close aria-label="Schließen">✕</button></div>
     <form class="modal-body" id="apptForm" novalidate>
       ${locked ? '<div class="alert info">Dieser Termin steht auf einer Rechnung und kann nicht mehr geändert werden. Für Änderungen die Rechnung stornieren.</div>' : ""}
-      <div class="section"><span class="label">Patient</span><div id="patBox"></div></div>
+      <div class="section"><span class="label">Kunde</span><div id="patBox"></div></div>
       <div class="section"><span class="label">Wann</span>
         <div class="grid3">
           <div class="field"><label for="ap-date">Datum</label><input id="ap-date" type="date" value="${a.start.slice(0, 10)}" ${locked ? "disabled" : ""}></div>
@@ -64,7 +64,7 @@ export function openAppt(id, startStr, presetPatient) {
       if (!locked) $("#chg").onclick = () => { mode = "search"; renderPat(); };
       return;
     }
-    box.innerHTML = `<div class="tabs-mini" role="group"><button type="button" data-m="search" aria-pressed="${mode === "search"}">Bestehender Patient</button><button type="button" data-m="new" aria-pressed="${mode === "new"}">Neuer Patient</button></div><div id="patInner" style="margin-top:.6rem"></div>`;
+    box.innerHTML = `<div class="tabs-mini" role="group"><button type="button" data-m="search" aria-pressed="${mode === "search"}">Bestehender Kunde</button><button type="button" data-m="new" aria-pressed="${mode === "new"}">Neuer Kunde</button></div><div id="patInner" style="margin-top:.6rem"></div>`;
     $$("[data-m]", box).forEach((b) => (b.onclick = () => { mode = b.dataset.m; renderPat(); }));
     const inner = $("#patInner");
     if (mode === "search") {
@@ -74,7 +74,7 @@ export function openAppt(id, startStr, presetPatient) {
         const q = inp.value.trim().toLowerCase();
         const res = S.patients.filter((p) => !q || pname(p).toLowerCase().includes(q)).slice(0, 8);
         sg.innerHTML = res.length ? res.map((p) => `<button type="button" data-pid="${p.id}"><strong>${esc(pname(p))}</strong> <span class="muted">${p.city ? "· " + esc(p.city) : ""}${p.birth ? " · geb. " + fmtDate(parseLocal(p.birth)) : ""}</span></button>`).join("")
-          : `<button type="button" id="mkNew">Kein Treffer. Neuen Patienten „${esc(inp.value)}“ anlegen</button>`;
+          : `<button type="button" id="mkNew">Kein Treffer. Neuen Kunden „${esc(inp.value)}“ anlegen</button>`;
         sg.hidden = false;
         $$("[data-pid]", sg).forEach((b) => (b.onmousedown = (e) => { e.preventDefault(); a.patientId = b.dataset.pid; mode = "chosen"; renderPat(); }));
         const mk = $("#mkNew", sg);
@@ -87,9 +87,21 @@ export function openAppt(id, startStr, presetPatient) {
       ["first", "last", "street", "zip", "city", "birth", "phone", "email"].forEach((k) => ($("#np-" + k).oninput = (e) => (newP[k] = e.target.value)));
     }
   }
+  // Mit gewähltem Ort: nur Leistungen dieses Orts und solche ohne festen Ort
+  const fitsLoc = (s) => !a.locationId || !s.locationId || s.locationId === a.locationId;
+  const firstSvc = () => S.services.find((s) => s.active && s.locationId === a.locationId) || S.services.find((s) => s.active && fitsLoc(s));
+  // Beim Ortswechsel gleichnamige Leistung des neuen Orts übernehmen (anderer Preis)
+  function switchLoc() {
+    a.serviceIds = a.serviceIds.map((id) => {
+      const s = svc(id); if (!s || fitsLoc(s)) return id;
+      return S.services.find((x) => x.active && x.locationId === a.locationId && x.name.toLowerCase() === s.name.toLowerCase())?.id || firstSvc()?.id;
+    }).filter(Boolean);
+    if (!a.serviceIds.length && firstSvc()) a.serviceIds.push(firstSvc().id);
+    renderItems(); sync();
+  }
   function renderItems() {
     const wrap = $("#items");
-    const opts = (sel) => S.services.filter((s) => s.active || s.id === sel).map((s) => `<option value="${s.id}" ${s.id === sel ? "selected" : ""}>${esc(s.name)} · ${s.duration} Min · ${eur(s.price)}</option>`).join("");
+    const opts = (sel) => S.services.filter((s) => (s.active && fitsLoc(s)) || s.id === sel).map((s) => `<option value="${s.id}" ${s.id === sel ? "selected" : ""}>${esc(s.name)} · ${s.duration} Min · ${eur(s.price)}${!a.locationId && s.locationId ? " · " + esc(loc(s.locationId)?.name || "") : ""}</option>`).join("");
     wrap.innerHTML = a.serviceIds.length ? a.serviceIds.map((sid, i) => `<div class="item-row"><select data-i="${i}" aria-label="Leistung ${i + 1}" ${locked ? "disabled" : ""}>${opts(sid)}</select>${locked || a.serviceIds.length < 2 ? "" : `<button type="button" class="btn ghost sm" data-rm="${i}" aria-label="Entfernen">✕</button>`}</div>`).join("")
       : `<div class="alert warn">Noch keine Leistungen angelegt. Unter „Leistungen“ legen Sie Ihre Behandlungen mit Preisen an.</div>`;
     $$("select[data-i]", wrap).forEach((s) => (s.onchange = () => { a.serviceIds[+s.dataset.i] = s.value; sync(); }));
@@ -120,7 +132,7 @@ export function openAppt(id, startStr, presetPatient) {
   if (!locked) {
     $("#ap-loc").onchange = (e) => {
       if (e.target.value === "__neu") { $("#newLocBox").hidden = false; e.target.value = a.locationId || ""; setTimeout(() => $("#ap-newloc").focus(), 20); }
-      else a.locationId = e.target.value || null;
+      else { a.locationId = e.target.value || null; switchLoc(); }
     };
     const addLoc = () => {
       const name = $("#ap-newloc").value.trim(); if (!name) return;
@@ -129,14 +141,14 @@ export function openAppt(id, startStr, presetPatient) {
         try {
           const l = S.locations.find((x) => x.name.toLowerCase() === name.toLowerCase()) || await api.saveLocation({ name });
           if (!S.locations.includes(l)) S.locations.push(l);
-          a.locationId = l.id; $("#ap-newloc").value = ""; $("#newLocBox").hidden = true; renderLoc();
+          a.locationId = l.id; $("#ap-newloc").value = ""; $("#newLocBox").hidden = true; renderLoc(); switchLoc();
         } catch (e) { toastError(e); }
       });
     };
     $("#ap-addloc").onclick = addLoc;
     $("#ap-newloc").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); addLoc(); } };
     $("#ap-bill").onchange = (e) => { a.needsInvoice = e.target.value === "ja"; billHint(); };
-    $("#addItem").onclick = () => { const f = S.services.find((s) => s.active); if (f) { a.serviceIds.push(f.id); renderItems(); sync(); } };
+    $("#addItem").onclick = () => { const f = firstSvc(); if (f) { a.serviceIds.push(f.id); renderItems(); sync(); } };
     $("#ap-dur").oninput = () => { durManual = true; checkOverlap(); };
     $("#ap-date").oninput = checkOverlap; $("#ap-time").oninput = checkOverlap;
     $$("[data-st]").forEach((b) => (b.onclick = () => { a.status = b.dataset.st; $$("[data-st]").forEach((x) => x.setAttribute("aria-pressed", x === b)); }));
@@ -144,7 +156,7 @@ export function openAppt(id, startStr, presetPatient) {
   function validate() {
     const err = [];
     if (mode === "new") err.push(...patientErrors(newP));
-    else if (!a.patientId) err.push("Bitte einen Patienten auswählen oder neu anlegen.");
+    else if (!a.patientId) err.push("Bitte einen Kunden auswählen oder neu anlegen.");
     if (!$("#ap-date").value || !$("#ap-time").value) err.push("Datum und Uhrzeit fehlen.");
     if (!a.serviceIds.length) err.push("Bitte mindestens eine Leistung wählen.");
     $("#formErr").innerHTML = err.length ? `<div class="alert bad">${err.map(esc).join("<br>")}</div>` : "";
@@ -181,11 +193,11 @@ export function openAppt(id, startStr, presetPatient) {
   const si = $("#showInv"); if (si) si.onclick = () => openInvoice(a.invoiceId);
 }
 
-/* ---------------- Patienten ---------------- */
+/* ---------------- Kunden ---------------- */
 const trimAll = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, typeof v === "string" ? v.trim() : v]));
 function patientErrors(p) {
   const err = [];
-  if (!p.first?.trim() || !p.last?.trim()) err.push("Vor- und Nachname des Patienten fehlen.");
+  if (!p.first?.trim() || !p.last?.trim()) err.push("Vor- und Nachname des Kunden fehlen.");
   if (p.zip?.trim() && !/^\d{5}$/.test(p.zip.trim())) err.push("Die PLZ muss fünf Ziffern haben.");
   return err;
 }
@@ -213,7 +225,7 @@ export function patientsView(main) {
   const q = UI.patientQuery.toLowerCase();
   const list = S.patients.filter((p) => !q || pname(p).toLowerCase().includes(q) || (p.city || "").toLowerCase().includes(q)).sort((a, b) => a.last.localeCompare(b.last, "de"));
   main.innerHTML = `
-    <div class="page-head"><h1>Patienten</h1><span class="muted num">${S.patients.length} in der Kartei</span><span class="spacer"></span><button class="btn primary" id="newPat">+ Neuer Patient</button></div>
+    <div class="page-head"><h1>Kunden</h1><span class="muted num">${S.patients.length} in der Kartei</span><span class="spacer"></span><button class="btn primary" id="newPat">+ Neuer Kunde</button></div>
     <div class="field" style="max-width:360px;margin-bottom:12px"><label for="pq">Suchen</label><input id="pq" value="${esc(UI.patientQuery)}" placeholder="Name oder Ort"></div>
     <div class="panel table-wrap"><table>
       <thead><tr><th>Name</th><th>Adresse</th><th>Geburtsdatum</th><th class="r">Termine</th><th>Nächster Termin</th><th class="r">Offen</th></tr></thead>
@@ -222,7 +234,7 @@ export function patientsView(main) {
         const next = ap.filter((a) => a.status === "geplant" && parseLocal(a.start) > new Date()).sort((a, b) => a.start.localeCompare(b.start))[0];
         const openSum = S.invoices.filter((i) => i.patientId === p.id && i.status === "offen").reduce((t, i) => t + i.total, 0);
         return `<tr class="click" data-pid="${p.id}"><td><strong>${esc(pname(p))}</strong></td><td>${esc(addr(p)) || '<span class="muted">–</span>'}</td><td class="num">${p.birth ? fmtDate(parseLocal(p.birth)) : "–"}</td><td class="r num">${ap.length}</td><td class="num">${next ? fmtDay(parseLocal(next.start)) + ", " + next.start.slice(11, 16) : "–"}</td><td class="r num">${openSum ? eur(openSum) : "–"}</td></tr>`;
-      }).join("") || `<tr><td colspan="6" class="empty">${S.patients.length ? "Keine Patienten gefunden." : "Noch keine Patienten. Neue Patienten legen Sie hier oder direkt beim Termin an."}</td></tr>`}</tbody>
+      }).join("") || `<tr><td colspan="6" class="empty">${S.patients.length ? "Keine Kunden gefunden." : "Noch keine Kunden. Neue Kunden legen Sie hier oder direkt beim Termin an."}</td></tr>`}</tbody>
     </table></div>`;
   const pq = $("#pq");
   pq.oninput = () => { UI.patientQuery = pq.value; const pos = pq.selectionStart; patientsView(main); const n = $("#pq"); n.focus(); n.setSelectionRange(pos, pos); };
@@ -236,7 +248,7 @@ export function openPatient(id) {
   const ap = id ? S.appts.filter((a) => a.patientId === id).sort((a, b) => b.start.localeCompare(a.start)) : [];
   const invs = id ? S.invoices.filter((i) => i.patientId === id).sort((a, b) => b.number.localeCompare(a.number)) : [];
   const ov = modal(`
-    <div class="modal-head"><h2>${id ? esc(pname(p)) : "Neuer Patient"}</h2><button class="btn ghost sm" data-close aria-label="Schließen">✕</button></div>
+    <div class="modal-head"><h2>${id ? esc(pname(p)) : "Neuer Kunde"}</h2><button class="btn ghost sm" data-close aria-label="Schließen">✕</button></div>
     <form class="modal-body" novalidate>
       ${patientFields("pf", p)}
       ${id ? `<p class="muted" style="font-size:.85rem;margin:0">Adressänderungen gelten für neue Rechnungen. Erstellte Rechnungen behalten die alte Adresse.</p>` : ""}
@@ -247,7 +259,7 @@ export function openPatient(id) {
         <div class="table-wrap"><table><tbody>${invs.map((i) => `<tr class="click" data-iid="${i.id}"><td class="num">${i.number}</td><td class="num">${fmtDate(parseLocal(i.date))}</td><td><span class="pill s-${i.status}">${INV_STATUS[i.status]}</span></td><td class="r num">${eur(i.total)}</td></tr>`).join("") || '<tr><td class="empty">Noch keine Rechnungen.</td></tr>'}</tbody></table></div></div>` : ""}
     </form>
     <div class="modal-foot">
-      ${id ? '<div class="left"><button class="btn" id="pfAppt">+ Termin für diesen Patienten</button></div>' : ""}
+      ${id ? '<div class="left"><button class="btn" id="pfAppt">+ Termin für diesen Kunden</button></div>' : ""}
       <button class="btn" data-close>Abbrechen</button><button class="btn primary" id="pfSave">${id ? "Speichern" : "Anlegen"}</button>
     </div>`, { wide: !!id });
   $$("[data-aid]", ov).forEach((r) => (r.onclick = () => openAppt(r.dataset.aid)));
@@ -262,7 +274,7 @@ export function openPatient(id) {
       try {
         const saved = await api.savePatient({ ...data, id: id || undefined });
         if (id) Object.assign(p, saved); else S.patients.push(saved);
-        closeModal(); render(); toast(id ? "Patient gespeichert" : "Patient angelegt");
+        closeModal(); render(); toast(id ? "Kunde gespeichert" : "Kunde angelegt");
       } catch (e) { toastError(e); }
     });
   };
@@ -273,11 +285,13 @@ export function servicesView(main) {
   const { S } = ST;
   main.innerHTML = `
     <div class="page-head"><h1>Leistungen</h1><span class="spacer"></span><button class="btn primary" id="newSvc">+ Neue Leistung</button></div>
-    <p class="muted" style="margin:0 0 14px;max-width:65ch">Diese Liste erscheint im Termin als Auswahlmenü. Die Dauer bestimmt die Länge im Kalender, der Preis landet auf der Rechnung. Preisänderungen gelten nur für künftige Rechnungen.</p>
-    <div class="panel table-wrap"><table>
+    <p class="muted" style="margin:0 0 14px;max-width:65ch">Diese Liste erscheint im Termin als Auswahlmenü. Die Dauer bestimmt die Länge im Kalender, der Preis landet auf der Rechnung. Preisänderungen gelten nur für künftige Rechnungen. Kostet eine Behandlung je Hotel unterschiedlich viel, legen Sie sie je Ort an: Im Termin erscheinen dann nur die Leistungen des gewählten Orts.</p>
+    ${svcGroups().map(([l, list]) => `
+    ${l === undefined ? "" : `<h2 class="svc-group">${l ? esc(l.name) : "Ohne festen Ort"}${l && !l.active ? ' <span class="pill s-abgesagt">Archiviert</span>' : ""}</h2>`}
+    <div class="panel table-wrap" style="margin-bottom:14px"><table>
       <thead><tr><th>Leistung</th><th>GebüH-Ziffer</th><th class="r">Dauer</th><th class="r">Preis</th><th>Status</th><th class="r">Verwendet</th></tr></thead>
-      <tbody>${S.services.map((s) => `<tr class="click" data-sid="${s.id}"><td><strong>${esc(s.name)}</strong></td><td class="num">${esc(s.code) || '<span class="muted">–</span>'}</td><td class="r num">${s.duration} Min</td><td class="r num">${eur(s.price)}</td><td>${s.active ? '<span class="pill s-durchgefuehrt">Aktiv</span>' : '<span class="pill s-abgesagt">Archiviert</span>'}</td><td class="r num">${S.appts.filter((a) => a.serviceIds.includes(s.id)).length}×</td></tr>`).join("") || '<tr><td colspan="6" class="empty">Noch keine Leistungen. Legen Sie Ihre erste Behandlung an.</td></tr>'}</tbody>
-    </table></div>
+      <tbody>${list.map((s) => `<tr class="click" data-sid="${s.id}"><td><strong>${esc(s.name)}</strong></td><td class="num">${esc(s.code) || '<span class="muted">–</span>'}</td><td class="r num">${s.duration} Min</td><td class="r num">${eur(s.price)}</td><td>${s.active ? '<span class="pill s-durchgefuehrt">Aktiv</span>' : '<span class="pill s-abgesagt">Archiviert</span>'}</td><td class="r num">${S.appts.filter((a) => a.serviceIds.includes(s.id)).length}×</td></tr>`).join("") || '<tr><td colspan="6" class="empty">Noch keine Leistungen. Legen Sie Ihre erste Behandlung an.</td></tr>'}</tbody>
+    </table></div>`).join("")}
     <div class="page-head" style="margin-top:28px"><h2 style="margin:0">Behandlungsorte</h2><span class="spacer"></span><button class="btn" id="newLoc">+ Neuer Ort</button></div>
     <p class="muted" style="margin:0 0 14px;max-width:65ch">Zum Beispiel die Hotels, in denen Sie behandeln. Im Termin wählen Sie den Ort aus dieser Liste. Neue Orte können Sie auch direkt im Termin anlegen.</p>
     <div class="panel table-wrap"><table>
@@ -288,6 +302,15 @@ export function servicesView(main) {
   $("#newSvc").onclick = () => openService(null);
   $$("[data-lid]").forEach((r) => (r.onclick = () => openLocation(r.dataset.lid)));
   $("#newLoc").onclick = () => openLocation(null);
+}
+// Leistungen nach Ort gruppiert; ohne Orte bleibt es eine einzige Liste
+function svcGroups() {
+  const { S } = ST;
+  const byName = (a, b) => a.name.localeCompare(b.name, "de");
+  if (!S.services.some((s) => s.locationId)) return [[undefined, S.services]];
+  const groups = S.locations.slice().sort(byName).map((l) => [l, S.services.filter((s) => s.locationId === l.id)]).filter(([, list]) => list.length);
+  const free = S.services.filter((s) => !s.locationId || !loc(s.locationId));
+  return free.length ? groups.concat([[null, free]]) : groups;
 }
 function openLocation(id) {
   const { S } = ST;
@@ -326,7 +349,7 @@ function openLocation(id) {
 }
 function openService(id) {
   const { S } = ST;
-  const s = id ? svc(id) : { name: "", code: "", duration: 30, price: 0, active: true };
+  const s = id ? svc(id) : { name: "", code: "", duration: 30, price: 0, active: true, locationId: null };
   const used = id ? S.appts.some((a) => a.serviceIds.includes(id)) : false;
   modal(`
     <div class="modal-head"><h2>${id ? "Leistung bearbeiten" : "Neue Leistung"}</h2><button class="btn ghost sm" data-close aria-label="Schließen">✕</button></div>
@@ -337,7 +360,8 @@ function openService(id) {
         <div class="field"><label for="sf-dur">Dauer (Minuten) *</label><input id="sf-dur" type="number" min="5" step="5" value="${s.duration}"></div>
         <div class="field"><label for="sf-price">Preis in € *</label><input id="sf-price" type="number" min="0" step="0.5" value="${s.price}"></div>
       </div>
-      <p class="muted" style="font-size:.85rem;margin:0">Die GebüH-Ziffer hilft Privatversicherten bei der Erstattung und steht mit auf der Rechnung.</p>
+      <div class="field"><label for="sf-loc">Ort</label><select id="sf-loc"><option value="">Alle Orte</option>${S.locations.filter((l) => l.active || l.id === s.locationId).sort((a, b) => a.name.localeCompare(b.name, "de")).map((l) => `<option value="${l.id}" ${l.id === s.locationId ? "selected" : ""}>${esc(l.name)}</option>`).join("")}</select></div>
+      <p class="muted" style="font-size:.85rem;margin:0">Die GebüH-Ziffer hilft Privatversicherten bei der Erstattung und steht mit auf der Rechnung. Mit einem Ort gilt die Leistung mit diesem Preis nur dort.</p>
       <div id="sfErr"></div>
     </form>
     <div class="modal-foot">
@@ -351,7 +375,7 @@ function openService(id) {
     if (err.length) { $("#sfErr").innerHTML = `<div class="alert bad">${err.join("<br>")}</div>`; return; }
     busy(btn, async () => {
       try {
-        const saved = await api.saveService({ ...s, name, code: $("#sf-code").value.trim(), duration: dur, price });
+        const saved = await api.saveService({ ...s, name, code: $("#sf-code").value.trim(), duration: dur, price, locationId: $("#sf-loc").value || null });
         if (id) Object.assign(s, saved); else S.services.push(saved);
         closeModal(); render(); toast("Leistung gespeichert");
       } catch (e) { toastError(e); }
