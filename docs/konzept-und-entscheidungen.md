@@ -38,6 +38,7 @@ Code: Mac → Dokumente/Treatment Manager · Supabase-Projekt `treatment-manager
 - Die App wird immer hell angezeigt (`data-theme="light"`), auch wenn das System auf Dunkelmodus steht.
 - Termin-Entwurf: angefangene Eingaben im Termin-Dialog werden im Browser zwischengespeichert (pro Termin bzw. ein Entwurf für neue Termine) und beim nächsten Öffnen wiederhergestellt, bis gespeichert oder „Verwerfen“ geklickt wird. Im Kalender erscheint dann „Entwurf fortsetzen“.
 - Leistungsauswahl im Termin nach Hotel/Ort gruppiert: gewählter Ort zuerst, dann alphabetisch, Leistungen für alle Orte zuletzt.
+- Kalender startet in der Listenansicht (nach Vorlage einer Kalender-App von Kilian): Wochenleiste mit Punkten je Termin, darunter alle Termine Tag für Tag mit Uhrzeit von–bis und farbiger Karte (Behandlung + Kunde, darunter Ort). Tag, Woche und Monat bleiben wählbar.
 - `appointments.needs_invoice`: „Rechnung ja/nein“. Bei „nein“ nicht abrechenbar, zählt aber in der Statistik (Preis der Leistungen, nach Termindatum)
 - `vouchers` + `voucher_counters`: Gutscheine mit Nummer GU+Jahr+lfd. Nr. (GU202601), Name, Betrag, Leistung; nur über `create_voucher` anlegbar, Nummer/Datum unveränderbar
 - Funktionen: `create_invoice`, `admin_list_accounts`, `admin_set_status`; Edge Function `admin-accounts` (invite, reject)

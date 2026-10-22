@@ -7,16 +7,16 @@ export const ST = {
   UI: {
     route: "kalender", auth: "login",
     cursor: new Date(),
-    view: window.matchMedia("(max-width:760px)").matches ? "tag" : "woche",
+    view: "liste", listDays: 21,
     patientQuery: "", billTab: "rechnungen", statYear: new Date().getFullYear(), acctFilter: "alle",
   },
 };
-try { const r = localStorage.getItem("tm:route"); if (r) ST.UI.route = r; const v = localStorage.getItem("tm:view"); if (v) ST.UI.view = v; } catch (_) {}
+try { const r = localStorage.getItem("tm:route"); if (r) ST.UI.route = r; const v = localStorage.getItem("tm:view2"); if (v) ST.UI.view = v; } catch (_) {}
 
 export const hooks = { render: () => {} };
 export const render = () => hooks.render();
 export function go(r) { ST.UI.route = r; try { localStorage.setItem("tm:route", r); } catch (_) {} render(); }
-export function setView(v) { ST.UI.view = v; try { localStorage.setItem("tm:view", v); } catch (_) {} render(); }
+export function setView(v) { ST.UI.view = v; try { localStorage.setItem("tm:view2", v); } catch (_) {} render(); }
 
 export const STATUS = { geplant: "Geplant", durchgefuehrt: "Durchgeführt", ausgefallen: "Nicht erschienen", abgesagt: "Abgesagt" };
 // Zahlungsart je Termin, nur intern (erscheint nicht auf der Rechnung)
