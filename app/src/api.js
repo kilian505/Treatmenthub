@@ -136,6 +136,7 @@ export const updateVoucher = async (v) =>
 
 // Rechnungsnummern: aktueller Stand und Start nach Umstieg aus einem anderen Rechnungsprogramm
 export const invoiceCounter = async (year) => check(await sb.rpc("invoice_counter", { p_year: year }));
+export const deleteInvoice = async (id) => check(await sb.rpc("delete_invoice", { p_invoice: id }));
 export const setInvoiceNumber = async (id, seq) => invFrom(check(await sb.rpc("set_invoice_number", { p_invoice: id, p_seq: seq })));
 export const setInvoiceStart = async (year, last) => check(await sb.rpc("set_invoice_start", { p_year: year, p_last: last }));
 export const setInvoiceStatus = async (id, status) => invFrom(check(await sb.from("invoices").update({ status }).eq("id", id).select().single()));

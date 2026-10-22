@@ -184,10 +184,10 @@ export function openInvoice(id) {
         <span class="muted small">Nur Nummern, die noch nicht vergeben sind. Rechnungen, die schon verschickt wurden, besser nicht umnummerieren.</span></div></div>
       <div class="paper-wrap">${invoiceHtml(i)}</div>
       ${i.status === "storniert" ? `<div class="alert info">Storniert am ${fmtDate(parseLocal(i.cancelledAt))}. Die Termine sind wieder abrechenbar. Die Rechnungsnummer bleibt vergeben.</div>`
-        : `<div class="alert info">Erstellte Rechnungen lassen sich nicht mehr bearbeiten oder löschen, nur stornieren. Die Rechnungsnummer kann über „Nummer ändern“ angepasst werden.</div>`}
+        : `<div class="alert info">Erstellte Rechnungen lassen sich nicht bearbeiten. Möglich sind „Nummer ändern“, „Stornieren“ (Nummer bleibt vergeben) und „Löschen“ (Rechnung verschwindet ganz, die Termine sind wieder abrechenbar).</div>`}
     </div>
     <div class="modal-foot">
-      <div class="left">${i.status === "offen" ? '<button class="btn" id="paid">Als bezahlt markieren</button>' : ""}${i.status === "bezahlt" ? '<button class="btn" id="unpaid">Zahlung zurücknehmen</button>' : ""}${i.status !== "storniert" ? '<button class="btn" id="chgNo">Nummer ändern</button><button class="btn danger" id="storno">Stornieren</button>' : ""}</div>
+      <div class="left">${i.status === "offen" ? '<button class="btn" id="paid">Als bezahlt markieren</button>' : ""}${i.status === "bezahlt" ? '<button class="btn" id="unpaid">Zahlung zurücknehmen</button>' : ""}${i.status !== "storniert" ? '<button class="btn" id="chgNo">Nummer ändern</button><button class="btn danger" id="storno">Stornieren</button>' : ""}<button class="btn danger" id="delInv">Löschen</button></div>
       <button class="btn" data-close>Schließen</button><button class="btn primary" id="pdf">PDF herunterladen</button>
     </div>`, { wide: true });
   const setStatus = (btn, status, msg) => busy(btn, async () => {
@@ -202,6 +202,14 @@ export function openInvoice(id) {
   const unp = $("#unpaid"); if (unp) unp.onclick = () => setStatus(unp, "offen");
   const st = $("#storno"); if (st) st.onclick = () => { if (armed(st, "Wirklich stornieren?")) setStatus(st, "storniert", `Rechnung ${i.number} storniert`); };
   $("#pdf").onclick = () => downloadPdf(i);
+  const di = $("#delInv");
+  di.onclick = () => { if (!armed(di, "Endgültig löschen?")) return; busy(di, async () => {
+    try {
+      await api.deleteInvoice(i.id);
+      S.invoices = S.invoices.filter((x) => x.id !== i.id); S.appts.forEach((a) => { if (a.invoiceId === i.id) a.invoiceId = null; });
+      closeModal(); render(); toast(`Rechnung ${i.number} gelöscht`);
+    } catch (e) { toastError(e); }
+  }); };
   const chg = $("#chgNo");
   if (chg) chg.onclick = () => { $("#noBox").hidden = false; $("#inv-seq").focus(); $("#inv-seq").select(); };
   $("#noCancel").onclick = () => ($("#noBox").hidden = true);
