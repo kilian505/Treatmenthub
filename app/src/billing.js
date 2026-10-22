@@ -79,24 +79,44 @@ function invoiceListView(main) {
   $$("[data-iid]").forEach((r) => (r.onclick = () => openInvoice(r.dataset.iid)));
 }
 
+// Rechnungslayout wie Manuelas bisherige Rechnungen: Logo und Absender rechts, Positionen als „2 x Leistung á € 78,00“
+const num2 = (n) => new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0);
+const ddmm = (d) => fmtDate(parseLocal(d)).slice(0, 6);
+// Gleiche Leistung zum gleichen Preis zusammenfassen, Behandlungstage anhängen
+function invoiceItems(i) {
+  const groups = [];
+  i.lines.forEach((l) => {
+    let g = groups.find((x) => x.name === l.name && x.price === l.price);
+    if (!g) groups.push((g = { name: l.name, price: l.price, qty: 0, dates: [] }));
+    g.qty += l.qty; if (!g.dates.includes(l.date)) g.dates.push(l.date);
+  });
+  return groups.map((g) => {
+    const ds = g.dates.slice().sort(), last = fmtDate(parseLocal(ds[ds.length - 1]));
+    const when = ds.length === 1 ? last : ds.slice(0, -1).map(ddmm).join(", ") + " und " + last;
+    return { text: `${g.qty} x ${g.name}${g.qty > 1 ? ` á € ${num2(g.price)}` : ""} am ${when}`, sum: g.qty * g.price };
+  });
+}
+const taxIdLabel = (t) => (/^\d{11}$/.test(t.replace(/\s/g, "")) ? "Steuer-ID" : "Steuernummer");
+const payNote = (i) => (i.payDays > 0 ? `Die Rechnung ist innerhalb von ${i.payDays} Tagen zur Zahlung fällig.` : "");
+const SALUTATION = "Sehr geehrte Damen und Herren,";
+const INTRO = "wie vereinbart, erlaube ich mir für meine erbrachte Leistung, folgende Rechnung zu stellen:";
+
 function invoiceHtml(i) {
-  const pr = i.practice, due = addDays(parseLocal(i.date), i.payDays);
-  return `<div class="paper">
-    <div class="p-top">
-      <div><div class="p-sender">${esc(pr.name)} · ${esc(pr.street)} · ${esc(pr.zip)} ${esc(pr.city)}</div>
-        <div>${[i.patient.name, i.patient.street, [i.patient.zip, i.patient.city].filter(Boolean).join(" ")].filter((t) => t && t.trim()).map(esc).join("<br>")}</div></div>
-      <div style="text-align:right"><strong>${esc(pr.name)}</strong><br>${esc(pr.owner)}${pr.title ? ", " + esc(pr.title) : ""}<br>${esc(pr.street)}<br>${esc(pr.zip)} ${esc(pr.city)}<br>${esc(pr.phone)}<br>${esc(pr.email)}</div>
-    </div>
-    <h3>Rechnung ${esc(i.number)}${i.status === "storniert" ? " · STORNIERT" : ""}</h3>
-    <div class="num">Rechnungsdatum: ${fmtDate(parseLocal(i.date))} · Behandlungszeitraum: ${fmtDate(parseLocal(i.period[0]))}${i.period[1] !== i.period[0] ? " – " + fmtDate(parseLocal(i.period[1])) : ""}${i.patient.birth ? ` · Geb.-Datum: ${fmtDate(parseLocal(i.patient.birth))}` : ""}</div>
-    <div class="table-wrap" style="margin-top:12px"><table>
-      <thead><tr><th>Datum</th><th>Ziffer</th><th>Leistung</th><th class="r">Anz.</th><th class="r">Betrag</th></tr></thead>
-      <tbody>${i.lines.map((l) => `<tr><td class="num">${fmtDate(parseLocal(l.date))}</td><td class="num">${esc(l.code) || "–"}</td><td>${esc(l.name)}</td><td class="r num">${l.qty}</td><td class="r num">${eur(l.qty * l.price)}</td></tr>`).join("")}
-        <tr class="p-total"><td colspan="4">Gesamtbetrag</td><td class="r num">${eur(i.total)}</td></tr></tbody>
-    </table></div>
-    <p>${esc(taxNote(pr.taxMode))}</p>
-    <p>Bitte überweisen Sie den Betrag bis zum <strong class="num">${fmtDate(due)}</strong> unter Angabe der Rechnungsnummer.</p>
-    <div class="p-foot"><span>${esc(pr.name)}${pr.taxNo ? " · Steuernr. " + esc(pr.taxNo) : ""}</span><span>${esc(pr.bank)}${pr.iban ? " · IBAN " + esc(pr.iban) : ""}</span></div>
+  const pr = i.practice, logo = ST.S.practice.logo, items = invoiceItems(i);
+  const to = [[i.patient.name, i.patient.street].filter((t) => t && t.trim()).map(esc).join("<br>"), esc([i.patient.zip, i.patient.city].filter(Boolean).join(" "))].filter(Boolean).join("<br><br>");
+  return `<div class="paper inv">
+    <div class="inv-head">${logo ? `<img src="${logo}" alt="">` : `<strong>${esc(pr.name)}</strong>`}
+      <div>${[pr.owner, pr.street, `${pr.zip} ${pr.city}`].filter((t) => t.trim()).map(esc).join("<br>")}${pr.phone ? `<br>☎ ${esc(pr.phone)}` : ""}${pr.email ? `<br>✉ ${esc(pr.email)}` : ""}</div></div>
+    <div class="inv-to">${to}</div>
+    <div class="inv-date">${esc(pr.city)}${pr.city ? ", " : ""}${fmtDate(parseLocal(i.date))}</div>
+    <p class="inv-no">Rechnung Nr. ${esc(i.number)}${i.status === "storniert" ? ' <span class="inv-storno">STORNIERT</span>' : ""}</p>
+    <p>${SALUTATION}</p><p>${INTRO}</p>
+    <table class="inv-items"><tbody>${items.map((it) => `<tr><td>${esc(it.text)}</td><td class="r num">€ ${num2(it.sum)}</td></tr>`).join("")}
+      <tr class="inv-sum"><td>Gesamtsumme</td><td class="r num">€ ${num2(i.total)}</td></tr></tbody></table>
+    <p>${esc(taxNote(pr.taxMode))}${taxNote(pr.taxMode) && payNote(i) ? "<br>" : ""}${esc(payNote(i))}</p>
+    <p>Ich bedanke mich für Ihren Auftrag!</p>
+    <div class="inv-foot"><div>${pr.bank || pr.iban ? `Bankverbindung:<br>${esc(pr.bank)}${pr.iban ? `<br>IBAN ${esc(pr.iban)}` : ""}` : ""}</div>
+      <div>${pr.taxNo ? `${taxIdLabel(pr.taxNo)}: ${esc(pr.taxNo)}` : ""}</div></div>
   </div>`;
 }
 
@@ -128,41 +148,57 @@ export function openInvoice(id) {
 }
 
 function buildPdf(i) {
-  const doc = new jsPDF({ unit: "mm", format: "a4" }); const pr = i.practice; const L = 25, R = 190;
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.5); doc.setTextColor(110);
-  doc.text(`${pr.name} · ${pr.street} · ${pr.zip} ${pr.city}`, L, 50);
-  doc.setDrawColor(160); doc.line(L, 51, L + 85, 51);
-  doc.setFontSize(10.5); doc.setTextColor(20);
-  doc.text([i.patient.name, i.patient.street, [i.patient.zip, i.patient.city].filter(Boolean).join(" ")].filter((t) => t && t.trim()), L, 58);
-  doc.setFont("helvetica", "bold"); doc.text(pr.name || "", R, 22, { align: "right" });
-  doc.setFont("helvetica", "normal"); doc.setFontSize(9);
-  doc.text([`${pr.owner}${pr.title ? ", " + pr.title : ""}`, pr.street, `${pr.zip} ${pr.city}`, pr.phone, pr.email].filter(Boolean), R, 27, { align: "right" });
-  doc.text([`Rechnungsnr.: ${i.number}`, `Datum: ${fmtDate(parseLocal(i.date))}`].concat(i.patient.birth ? [`Geb.-Datum: ${fmtDate(parseLocal(i.patient.birth))}`] : []), R, 58, { align: "right" });
-  doc.setFont("helvetica", "bold"); doc.setFontSize(15);
-  doc.text(`Rechnung${i.status === "storniert" ? " (storniert)" : ""}`, L, 95);
+  const doc = new jsPDF({ unit: "mm", format: "a4" }); const pr = i.practice, logo = ST.S.practice.logo;
+  const L = 30, R = 182, IL = L + 8, ICUR = 140, INUM = 166;
+  doc.setTextColor(25);
+  // Kopf: Logo und Absender rechtsbündig
+  let y = 18;
+  if (logo) {
+    const p = doc.getImageProperties(logo), w = 34, h = (w * p.height) / p.width;
+    doc.addImage(logo, "PNG", R - w, y, w, h); y += h + 4.5;
+  } else { doc.setFont("helvetica", "bold"); doc.setFontSize(14); doc.text(pr.name || "", R, y + 6, { align: "right" }); y += 11; }
   doc.setFont("helvetica", "normal"); doc.setFontSize(9.5);
-  const per = fmtDate(parseLocal(i.period[0])) + (i.period[1] !== i.period[0] ? " – " + fmtDate(parseLocal(i.period[1])) : "");
-  doc.text(`Behandlungszeitraum: ${per}`, L, 102);
-  let y = 114; const c = { d: L, z: L + 24, n: L + 42, q: R - 28, b: R };
-  doc.setFontSize(8.5); doc.setTextColor(100);
-  doc.text("Datum", c.d, y); doc.text("Ziffer", c.z, y); doc.text("Leistung", c.n, y); doc.text("Anz.", c.q, y, { align: "right" }); doc.text("Betrag", c.b, y, { align: "right" });
-  doc.setDrawColor(200); doc.line(L, y + 2, R, y + 2); y += 8; doc.setTextColor(20); doc.setFontSize(9.5);
-  i.lines.forEach((l) => {
-    if (y > 255) { doc.addPage(); y = 25; }
-    const name = doc.splitTextToSize(l.name, c.q - c.n - 14);
-    doc.text(fmtDate(parseLocal(l.date)), c.d, y); doc.text(l.code || "–", c.z, y); doc.text(name, c.n, y);
-    doc.text(String(l.qty), c.q, y, { align: "right" }); doc.text(eurPdf(l.qty * l.price), c.b, y, { align: "right" });
-    y += 6 * name.length; doc.setDrawColor(230); doc.line(L, y - 3.5, R, y - 3.5);
+  [pr.owner, pr.street, `${pr.zip} ${pr.city}`].filter((t) => t && t.trim()).forEach((t) => { doc.text(t, R, y, { align: "right" }); y += 4.1; });
+  // Telefon- und Brief-Symbol als kleine Zeichnung (Symbolschriften zeigt nicht jeder PDF-Betrachter an)
+  const icon = { phone(x, b) { doc.roundedRect(x - 1.7, b - 2.7, 1.7, 2.9, 0.3, 0.3, "S"); doc.line(x - 1.1, b - 0.35, x - 0.6, b - 0.35); },
+    mail(x, b) { doc.rect(x - 2.6, b - 2.1, 2.6, 1.9, "S"); doc.line(x - 2.6, b - 2.1, x - 1.3, b - 1.0); doc.line(x - 1.3, b - 1.0, x, b - 2.1); } };
+  doc.setLineWidth(0.2); doc.setDrawColor(25);
+  [["phone", pr.phone], ["mail", pr.email]].filter(([, v]) => v).forEach(([k, v]) => {
+    doc.text(v, R, y, { align: "right" }); icon[k](R - doc.getTextWidth(v) - 1.2, y); y += 4.1;
   });
-  y += 2; doc.setDrawColor(40); doc.setLineWidth(0.5); doc.line(L, y - 3, R, y - 3); doc.setLineWidth(0.2);
-  doc.setFont("helvetica", "bold"); doc.text("Gesamtbetrag", c.n, y + 2); doc.text(eurPdf(i.total), c.b, y + 2, { align: "right" });
-  doc.setFont("helvetica", "normal"); y += 14;
-  const note = taxNote(pr.taxMode); if (note) { doc.text(doc.splitTextToSize(note, R - L), L, y); y += 8; }
-  doc.text(doc.splitTextToSize(`Bitte überweisen Sie den Gesamtbetrag bis zum ${fmtDate(addDays(parseLocal(i.date), i.payDays))} unter Angabe der Rechnungsnummer ${i.number} auf das unten genannte Konto.`, R - L), L, y);
-  doc.setDrawColor(190); doc.line(L, 277, R, 277); doc.setFontSize(7.5); doc.setTextColor(100);
-  doc.text(`${pr.name} · ${pr.owner}${pr.taxNo ? " · Steuernr. " + pr.taxNo : ""}`, L, 281);
-  doc.text(`${pr.bank}${pr.iban ? " · IBAN " + pr.iban : ""}`, L, 285);
+  // Empfänger
+  doc.setFont("helvetica", "normal"); doc.setFontSize(10.5);
+  y = Math.max(y + 2, 66);
+  [i.patient.name, i.patient.street].filter((t) => t && t.trim()).forEach((t) => { doc.text(t, L, y); y += 4.8; });
+  const zc = [i.patient.zip, i.patient.city].filter(Boolean).join(" "); if (zc.trim()) { y += 4.8; doc.text(zc, L, y); }
+  // Ort, Datum und Nummer
+  y = Math.max(y + 18, 100);
+  doc.text(`${pr.city ? pr.city + ", " : ""}${fmtDate(parseLocal(i.date))}`, R, y, { align: "right" });
+  y += 20; doc.setFont("helvetica", "bold"); doc.text(`Rechnung Nr. ${i.number}`, L, y);
+  if (i.status === "storniert") { doc.setTextColor(170, 30, 30); doc.text("STORNIERT", R, y, { align: "right" }); doc.setTextColor(25); }
+  doc.setFont("helvetica", "normal"); y += 18;
+  doc.text(SALUTATION, L, y); y += 9;
+  doc.text(doc.splitTextToSize(INTRO, R - L), L, y); y += 12;
+  // Positionen
+  const items = invoiceItems(i);
+  items.forEach((it, k) => {
+    const lines = doc.splitTextToSize(it.text, ICUR - IL - 4);
+    if (y + lines.length * 5 > 250) { doc.addPage(); y = 25; }
+    doc.text(lines, IL, y); doc.text("€", ICUR, y); doc.text(num2(it.sum), INUM, y, { align: "right" });
+    y += 5 * (lines.length - 1);
+    if (k === items.length - 1) { doc.setDrawColor(25); doc.setLineWidth(0.25); doc.line(IL, y + 0.9, INUM, y + 0.9); }
+    y += 5;
+  });
+  y += 2.5; doc.text("Gesamtsumme", IL, y); doc.text(`€ ${num2(i.total)}`, INUM, y, { align: "right" });
+  doc.line(IL, y + 0.9, INUM, y + 0.9);
+  // Hinweise
+  y += 24; if (y > 245) { doc.addPage(); y = 30; }
+  [taxNote(pr.taxMode), payNote(i)].filter(Boolean).forEach((t) => { doc.text(doc.splitTextToSize(t, R - L), L, y); y += 5; });
+  y += 12; doc.text("Ich bedanke mich für Ihren Auftrag!", L, y);
+  // Fuß: Bank links, Steuer-ID rechts
+  doc.setFontSize(9.5); const fy = 268;
+  if (pr.bank || pr.iban) doc.text(["Bankverbindung:", pr.bank, pr.iban ? `IBAN ${pr.iban}` : ""].filter(Boolean), L, fy);
+  if (pr.taxNo) doc.text(`${taxIdLabel(pr.taxNo)}: ${pr.taxNo}`, R, fy, { align: "right" });
   return doc;
 }
 function downloadPdf(i) {
