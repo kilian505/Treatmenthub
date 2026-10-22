@@ -19,6 +19,8 @@ export function go(r) { ST.UI.route = r; try { localStorage.setItem("tm:route", 
 export function setView(v) { ST.UI.view = v; try { localStorage.setItem("tm:view", v); } catch (_) {} render(); }
 
 export const STATUS = { geplant: "Geplant", durchgefuehrt: "Durchgeführt", ausgefallen: "Nicht erschienen", abgesagt: "Abgesagt" };
+// Zahlungsart je Termin, nur intern (erscheint nicht auf der Rechnung)
+export const PAY = { paypal: "PayPal", ueberweisung: "Überweisung", bar: "Bar" };
 export const INV_STATUS = { offen: "Offen", bezahlt: "Bezahlt", storniert: "Storniert" };
 
 export const pat = (id) => ST.S.patients.find((p) => p.id === id);

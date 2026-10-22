@@ -1,6 +1,6 @@
 // Termine, Kunden, Leistungen
 import { $, $$, esc, eur, ymd, hm, parseLocal, toLocalStr, addMin, fmtDate, fmtDay } from "./util.js";
-import { ST, render, STATUS, INV_STATUS, pat, svc, loc, addr, pname, apptTotal, apptTitle, apptWho, isOwn, overlaps, toast, toastError, modal, closeModal, busy, armed } from "./state.js";
+import { ST, render, STATUS, INV_STATUS, PAY, pat, svc, loc, addr, pname, apptTotal, apptTitle, apptWho, isOwn, overlaps, toast, toastError, modal, closeModal, busy, armed } from "./state.js";
 import * as api from "./api.js";
 import { openInvoice, openCreateInvoice } from "./billing.js";
 
@@ -31,10 +31,12 @@ export function openAppt(id, startStr, presetPatient) {
         </div><div id="overlapMsg"></div>
       </div>
       <div class="section treat-only"><span class="label">Ort und Abrechnung</span>
-        <div class="grid2">
+        <div class="grid3" style="grid-template-columns:2fr 1.3fr 1.3fr">
           <div class="field"><label for="ap-loc">Ort der Behandlung</label><select id="ap-loc" ${locked ? "disabled" : ""}></select></div>
           <div class="field"><label for="ap-bill">Rechnung erstellen?</label><select id="ap-bill" ${locked ? "disabled" : ""}>
             <option value="ja" ${a.needsInvoice ? "selected" : ""}>Rechnung ja</option><option value="nein" ${a.needsInvoice ? "" : "selected"}>Rechnung nein</option></select></div>
+          <div class="field"><label for="ap-pay">Bezahlt per <span class="muted small">(intern)</span></label><select id="ap-pay">
+            <option value="">– noch offen –</option>${Object.entries(PAY).map(([k, v]) => `<option value="${k}" ${a.paymentMethod === k ? "selected" : ""}>${v}</option>`).join("")}</select></div>
         </div>
         <div id="newLocBox" hidden><div class="grid2" style="grid-template-columns:1fr auto;align-items:end;margin-top:.5rem">
           <div class="field"><label for="ap-newloc">Neuer Ort (z. B. Name des Hotels)</label><input id="ap-newloc" autocomplete="off"></div>
@@ -57,9 +59,10 @@ export function openAppt(id, startStr, presetPatient) {
     <div class="modal-foot">
       <div class="left">${existing && !locked ? '<button class="btn danger" id="delAppt">Löschen</button>' : ""}
         ${existing && !locked && !own && a.status === "durchgefuehrt" && a.needsInvoice ? '<button class="btn" id="billNow">Jetzt abrechnen</button>' : ""}
+        ${existing && !locked && !own && !existing.needsInvoice && a.serviceIds.length ? '<button class="btn" id="billLate">Doch Rechnung erstellen</button>' : ""}
         ${locked ? '<button class="btn" id="showInv">Rechnung ansehen</button>' : ""}</div>
       <button class="btn" data-close>Abbrechen</button>
-      ${locked ? "" : `<button class="btn primary" id="saveAppt">${existing ? "Speichern" : "Termin anlegen"}</button>`}
+      ${locked ? '<button class="btn primary" id="savePay">Zahlungsart speichern</button>' : `<button class="btn primary" id="saveAppt">${existing ? "Speichern" : "Termin anlegen"}</button>`}
     </div>`);
 
   function renderPat() {
@@ -209,13 +212,14 @@ export function openAppt(id, startStr, presetPatient) {
       if (mode === "new") { const p = await api.savePatient(trimAll(newP)); S.patients.push(p); a.patientId = p.id; mode = "chosen"; }
     }
     a.start = `${$("#ap-date").value}T${$("#ap-time").value}`; a.duration = +$("#ap-dur").value || 30; a.note = $("#ap-note").value;
+    a.paymentMethod = own ? "" : $("#ap-pay").value;
     const saved = await api.saveAppt(a);
     if (existing) Object.assign(existing, saved); else S.appts.push(saved);
     a.id = saved.id;
     if (!own) while (extra.length) {
       const x = extra[0];
       const more = await api.saveAppt({ patientId: a.patientId, start: `${x.date}T${x.time}`, duration: svc(x.sid)?.duration || 30, serviceIds: [x.sid],
-        status: a.status, note: "", locationId: a.locationId, needsInvoice: a.needsInvoice, title: "" });
+        status: a.status, note: "", locationId: a.locationId, needsInvoice: a.needsInvoice, title: "", paymentMethod: a.paymentMethod });
       S.appts.push(more); extra.shift(); added++;
     }
     return existing || saved;
@@ -225,6 +229,12 @@ export function openAppt(id, startStr, presetPatient) {
     try { const r = await persist(); ST.UI.cursor = parseLocal(r.start); closeModal(); render(); toast(added ? `${added + 1} Termine gespeichert` : existing ? "Termin gespeichert" : "Termin angelegt"); }
     catch (e) { toastError(e); }
   }); };
+  // Abgerechnete Termine: nur die Zahlungsart ist noch änderbar
+  const sp = $("#savePay");
+  if (sp) sp.onclick = () => busy(sp, async () => {
+    try { Object.assign(existing, await api.saveAppt({ ...existing, paymentMethod: $("#ap-pay").value })); closeModal(); render(); toast("Zahlungsart gespeichert"); }
+    catch (e) { toastError(e); }
+  });
   const del = $("#delAppt");
   if (del) del.onclick = () => { if (!armed(del, "Wirklich löschen?")) return; busy(del, async () => {
     try { await api.deleteAppt(existing.id); S.appts = S.appts.filter((x) => x.id !== existing.id); closeModal(); render(); toast("Termin gelöscht"); }
@@ -236,6 +246,11 @@ export function openAppt(id, startStr, presetPatient) {
       const r = await persist();
       render(); openCreateInvoice(r.patientId, [r]);
     } catch (e) { toastError(e); }
+  }); };
+  const bl = $("#billLate");
+  if (bl) bl.onclick = () => { if (!validate()) return; busy(bl, async () => {
+    try { a.needsInvoice = true; const r = await persist(); render(); openCreateInvoice(r.patientId, [r]); }
+    catch (e) { toastError(e); }
   }); };
   const si = $("#showInv"); if (si) si.onclick = () => openInvoice(a.invoiceId);
 }
