@@ -75,13 +75,20 @@ function invoiceListView(main) {
 // Rechnung erstellen: Ort (Hotel) wählen oder neu anlegen, Rechnungsdatum
 export function openCreateInvoice(pid, list) {
   const { S } = ST;
+  // Alle offenen Termine des Kunden zur Auswahl; durchgeführte sind vorausgewählt,
+  // geplante (z. B. weitere Behandlungstage) werden beim Erstellen als durchgeführt markiert
+  const cands = S.appts.filter((a) => a.patientId === pid && !a.invoiceId && a.needsInvoice && a.serviceIds.length
+    && (a.status === "durchgefuehrt" || a.status === "geplant" || list.includes(a))).sort((a, b) => a.start.localeCompare(b.start));
+  const chosen = new Set(cands.filter((a) => list.includes(a) || a.status === "durchgefuehrt").map((a) => a.id));
   // Vorschlag: der Ort, an dem die meisten dieser Termine stattfanden
   const cnt = {}; list.forEach((a) => a.locationId && (cnt[a.locationId] = (cnt[a.locationId] || 0) + 1));
   let locId = Object.entries(cnt).sort((x, y) => y[1] - x[1])[0]?.[0] || "";
   modal(`
     <div class="modal-head"><h2>Rechnung erstellen</h2><button class="btn ghost sm" data-close aria-label="Schließen">✕</button></div>
     <div class="modal-body">
-      <p style="margin:0"><strong>${esc(pname(pat(pid)))}</strong> · ${list.length} ${list.length > 1 ? "Termine" : "Termin"} · <span class="num">${eur(list.reduce((t, a) => t + apptTotal(a), 0))}</span></p>
+      <p style="margin:0"><strong>${esc(pname(pat(pid)))}</strong> · <span id="ciSum"></span></p>
+      <div><span class="label">Termine auf dieser Rechnung</span><ul class="ci-list">${cands.map((a) => `<li><label><input type="checkbox" data-ci="${a.id}" ${chosen.has(a.id) ? "checked" : ""}>
+        <span><span class="num">${fmtDate(parseLocal(a.start))}</span> · ${esc(apptTitle(a))} · <span class="num">${eur(apptTotal(a))}</span>${a.status === "geplant" ? ' <span class="muted small">(geplant, wird als durchgeführt markiert)</span>' : ""}</span></label></li>`).join("")}</ul></div>
       <div class="grid2">
         <div class="field"><label for="ci-loc">Ort der Behandlung (Hotel)</label><select id="ci-loc"></select></div>
         <div class="field"><label for="ci-date">Rechnungsdatum</label><input id="ci-date" type="date" value="${ymd(new Date())}"></div>
@@ -92,6 +99,9 @@ export function openCreateInvoice(pid, list) {
       <p class="muted small" style="margin:0">Der Ort erscheint auf der Rechnung unter der Rechnungsnummer.</p>
     </div>
     <div class="modal-foot"><button class="btn" data-close>Abbrechen</button><button class="btn primary" id="ciGo">Rechnung erstellen</button></div>`);
+  const sumTxt = () => { const l = cands.filter((a) => chosen.has(a.id)); $("#ciSum").textContent = `${l.length} ${l.length === 1 ? "Termin" : "Termine"} · ${eur(l.reduce((t, a) => t + apptTotal(a), 0))}`; };
+  $$("[data-ci]").forEach((c) => (c.onchange = () => { c.checked ? chosen.add(c.dataset.ci) : chosen.delete(c.dataset.ci); sumTxt(); }));
+  sumTxt();
   const sel = $("#ci-loc");
   const renderSel = () => {
     const ls = S.locations.filter((l) => l.active || l.id === locId).sort((x, y) => x.name.localeCompare(y.name, "de"));
@@ -116,8 +126,11 @@ export function openCreateInvoice(pid, list) {
   const btn = $("#ciGo");
   btn.onclick = () => busy(btn, async () => {
     try {
-      const inv = await api.createInvoice(pid, list.map((a) => a.id), $("#ci-date").value || null, locId || null);
-      S.invoices.push(inv); list.forEach((a) => (a.invoiceId = inv.id));
+      const pick = cands.filter((a) => chosen.has(a.id));
+      if (!pick.length) throw new Error("Bitte mindestens einen Termin auswählen.");
+      for (const a of pick.filter((x) => x.status !== "durchgefuehrt")) Object.assign(a, await api.saveAppt({ ...a, status: "durchgefuehrt" }));
+      const inv = await api.createInvoice(pid, pick.map((a) => a.id), $("#ci-date").value || null, locId || null);
+      S.invoices.push(inv); pick.forEach((a) => (a.invoiceId = inv.id));
       closeModal(); render(); openInvoice(inv.id); toast(`Rechnung ${inv.number} erstellt`);
     } catch (e) { toastError(e); }
   });

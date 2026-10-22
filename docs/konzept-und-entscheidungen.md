@@ -31,6 +31,7 @@ Code: Mac → Dokumente/Treatment Manager · Supabase-Projekt `treatment-manager
 - Eigene Termine (privat, Besprechung …): `appointments.patient_id` leer, dafür `title`; keine Leistungen, nie Rechnung, nicht in Statistik oder „Ohne Rechnung“.
 - Rechnung mit Ort: beim Erstellen Hotel wählen oder neu anlegen (`create_invoice_at`, Name als Snapshot in `invoices.location`). `create_invoice` ohne Ort bleibt für ältere App-Stände.
 - Rechnungsnummer einer erstellten, nicht stornierten Rechnung änderbar über `set_invoice_number` (gleiches Jahr, nur freie Nummern, Zähler wird mitgezogen). Sonst bleiben Rechnungen unveränderlich.
+- Weitere Behandlungstage: im Termin-Dialog zusätzliche Tage anlegen (je ein eigener Termin, gleicher Kunde/Ort). Beim Erstellen der Rechnung lassen sich alle offenen Termine des Kunden auswählen; geplante werden dabei als durchgeführt markiert.
 - `appointments.needs_invoice`: „Rechnung ja/nein“. Bei „nein“ nicht abrechenbar, zählt aber in der Statistik (Preis der Leistungen, nach Termindatum)
 - `vouchers` + `voucher_counters`: Gutscheine mit Nummer GU+Jahr+lfd. Nr. (GU202601), Name, Betrag, Leistung; nur über `create_voucher` anlegbar, Nummer/Datum unveränderbar
 - Funktionen: `create_invoice`, `admin_list_accounts`, `admin_set_status`; Edge Function `admin-accounts` (invite, reject)

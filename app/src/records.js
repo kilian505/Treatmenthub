@@ -44,6 +44,9 @@ export function openAppt(id, startStr, presetPatient) {
       <div class="section treat-only"><span class="label">Behandlung</span><div class="items" id="items"></div>
         ${locked ? "" : '<button type="button" class="btn sm" id="addItem" style="align-self:flex-start">+ Weitere Leistung</button>'}
         <div class="sum"><span>Summe</span><span class="num" id="sum"></span></div>
+        ${locked ? "" : `<div class="extra-days"><span class="label">Weitere Behandlungstage</span><div class="items" id="extraDays"></div>
+          <button type="button" class="btn sm" id="addDay" style="align-self:flex-start">+ Weiterer Behandlungstag</button>
+          <p class="muted small" style="margin:0">Jeder weitere Tag wird ein eigener Termin für denselben Kunden und Ort. Später lassen sich alle zusammen auf eine Rechnung setzen.</p></div>`}
       </div>
       <div class="section treat-only"><span class="label">Status</span><div class="status-pick">
         ${Object.entries(STATUS).map(([k, v]) => `<button type="button" class="s-${k}" data-st="${k}" aria-pressed="${a.status === k}" ${locked ? "disabled" : ""}>${v}</button>`).join("")}
@@ -94,27 +97,39 @@ export function openAppt(id, startStr, presetPatient) {
   const fitsLoc = (s) => !a.locationId || !s.locationId || s.locationId === a.locationId;
   const firstSvc = () => S.services.find((s) => s.active && s.locationId === a.locationId) || S.services.find((s) => s.active && fitsLoc(s));
   // Beim Ortswechsel gleichnamige Leistung des neuen Orts übernehmen (anderer Preis)
+  const mapSvc = (id) => {
+    const s = svc(id); if (!s || fitsLoc(s)) return id;
+    return S.services.find((x) => x.active && x.locationId === a.locationId && x.name.toLowerCase() === s.name.toLowerCase())?.id || firstSvc()?.id;
+  };
   function switchLoc() {
-    a.serviceIds = a.serviceIds.map((id) => {
-      const s = svc(id); if (!s || fitsLoc(s)) return id;
-      return S.services.find((x) => x.active && x.locationId === a.locationId && x.name.toLowerCase() === s.name.toLowerCase())?.id || firstSvc()?.id;
-    }).filter(Boolean);
+    a.serviceIds = a.serviceIds.map(mapSvc).filter(Boolean);
     if (!a.serviceIds.length && firstSvc()) a.serviceIds.push(firstSvc().id);
-    renderItems(); sync();
+    extra.forEach((x) => (x.sid = mapSvc(x.sid) || ""));
+    renderItems(); renderExtra(); sync();
   }
+  const opts = (sel) => S.services.filter((s) => (s.active && fitsLoc(s)) || s.id === sel).map((s) => `<option value="${s.id}" ${s.id === sel ? "selected" : ""}>${esc(s.name)} · ${s.duration} Min · ${eur(s.price)}${!a.locationId && s.locationId ? " · " + esc(loc(s.locationId)?.name || "") : ""}</option>`).join("");
+  // Weitere Behandlungstage: werden beim Speichern als eigene Termine angelegt
+  const extra = [];
+  function renderExtra() {
+    const wrap = $("#extraDays"); if (!wrap) return;
+    wrap.innerHTML = extra.map((x, k) => `<div class="item-row extra-row"><input type="date" data-k="${k}" data-x="date" value="${x.date}" aria-label="Datum Tag ${k + 2}"><input type="time" step="300" data-k="${k}" data-x="time" value="${x.time}" aria-label="Uhrzeit Tag ${k + 2}"><select data-k="${k}" data-x="sid" aria-label="Leistung Tag ${k + 2}">${opts(x.sid)}</select><button type="button" class="btn ghost sm" data-rmday="${k}" aria-label="Tag entfernen">✕</button></div>`).join("");
+    $$("[data-x]", wrap).forEach((el) => (el.oninput = el.onchange = () => { extra[+el.dataset.k][el.dataset.x] = el.value; extraSum(); }));
+    $$("[data-rmday]", wrap).forEach((b) => (b.onclick = () => { extra.splice(+b.dataset.rmday, 1); renderExtra(); extraSum(); }));
+    extraSum();
+  }
+  const extraSum = () => { const t = apptTotal(a) + extra.reduce((s, x) => s + (svc(x.sid)?.price || 0), 0); $("#sum").textContent = extra.length ? `${eur(apptTotal(a))} · alle Tage ${eur(t)}` : eur(t); };
   function renderItems() {
     const wrap = $("#items");
-    const opts = (sel) => S.services.filter((s) => (s.active && fitsLoc(s)) || s.id === sel).map((s) => `<option value="${s.id}" ${s.id === sel ? "selected" : ""}>${esc(s.name)} · ${s.duration} Min · ${eur(s.price)}${!a.locationId && s.locationId ? " · " + esc(loc(s.locationId)?.name || "") : ""}</option>`).join("");
     wrap.innerHTML = a.serviceIds.length ? a.serviceIds.map((sid, i) => `<div class="item-row"><select data-i="${i}" aria-label="Leistung ${i + 1}" ${locked ? "disabled" : ""}>${opts(sid)}</select>${locked || a.serviceIds.length < 2 ? "" : `<button type="button" class="btn ghost sm" data-rm="${i}" aria-label="Entfernen">✕</button>`}</div>`).join("")
       : `<div class="alert warn">Noch keine Leistungen angelegt. Unter „Leistungen“ legen Sie Ihre Behandlungen mit Preisen an.</div>`;
     $$("select[data-i]", wrap).forEach((s) => (s.onchange = () => { a.serviceIds[+s.dataset.i] = s.value; sync(); }));
     $$("[data-rm]", wrap).forEach((b) => (b.onclick = () => { a.serviceIds.splice(+b.dataset.rm, 1); renderItems(); sync(); }));
-    $("#sum").textContent = eur(apptTotal(a));
+    extraSum();
   }
   function sync() {
     if (own) { checkOverlap(); return; }
     if (!durManual) { a.duration = a.serviceIds.reduce((t, i) => t + (svc(i)?.duration || 0), 0) || 30; $("#ap-dur").value = a.duration; }
-    $("#sum").textContent = eur(apptTotal(a)); checkOverlap();
+    extraSum(); checkOverlap();
   }
   function checkOverlap() {
     const d = $("#ap-date").value, t = $("#ap-time").value, box = $("#overlapMsg");
@@ -165,6 +180,12 @@ export function openAppt(id, startStr, presetPatient) {
     $("#ap-newloc").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); addLoc(); } };
     $("#ap-bill").onchange = (e) => { a.needsInvoice = e.target.value === "ja"; billHint(); };
     $("#addItem").onclick = () => { const f = firstSvc(); if (f) { a.serviceIds.push(f.id); renderItems(); sync(); } };
+    $("#addDay").onclick = () => {
+      const prev = extra[extra.length - 1]?.date || $("#ap-date").value;
+      const d = prev ? parseLocal(prev + "T12:00") : new Date(); d.setDate(d.getDate() + 1);
+      extra.push({ date: ymd(d), time: $("#ap-time").value || "10:00", sid: a.serviceIds[0] || firstSvc()?.id || "" });
+      renderExtra();
+    };
     $("#ap-dur").oninput = () => { durManual = true; checkOverlap(); };
     $("#ap-date").oninput = checkOverlap; $("#ap-time").oninput = checkOverlap;
     $$("[data-st]").forEach((b) => (b.onclick = () => { a.status = b.dataset.st; $$("[data-st]").forEach((x) => x.setAttribute("aria-pressed", x === b)); }));
@@ -176,9 +197,11 @@ export function openAppt(id, startStr, presetPatient) {
     else if (!a.patientId) err.push("Bitte einen Kunden auswählen oder neu anlegen.");
     if (!$("#ap-date").value || !$("#ap-time").value) err.push("Datum und Uhrzeit fehlen.");
     if (!own && !a.serviceIds.length) err.push("Bitte mindestens eine Leistung wählen.");
+    if (!own && extra.some((x) => !x.date || !x.time || !x.sid)) err.push("Bei den weiteren Behandlungstagen fehlen Datum, Uhrzeit oder Leistung.");
     $("#formErr").innerHTML = err.length ? `<div class="alert bad">${err.map(esc).join("<br>")}</div>` : "";
     return !err.length;
   }
+  let added = 0;
   async function persist() {
     if (own) Object.assign(a, { patientId: null, serviceIds: [], locationId: null, needsInvoice: false, title: $("#ap-title").value.trim() });
     else {
@@ -189,11 +212,17 @@ export function openAppt(id, startStr, presetPatient) {
     const saved = await api.saveAppt(a);
     if (existing) Object.assign(existing, saved); else S.appts.push(saved);
     a.id = saved.id;
+    if (!own) while (extra.length) {
+      const x = extra[0];
+      const more = await api.saveAppt({ patientId: a.patientId, start: `${x.date}T${x.time}`, duration: svc(x.sid)?.duration || 30, serviceIds: [x.sid],
+        status: a.status, note: "", locationId: a.locationId, needsInvoice: a.needsInvoice, title: "" });
+      S.appts.push(more); extra.shift(); added++;
+    }
     return existing || saved;
   }
   const saveBtn = $("#saveAppt");
   if (saveBtn) saveBtn.onclick = () => { if (!validate()) return; busy(saveBtn, async () => {
-    try { const r = await persist(); ST.UI.cursor = parseLocal(r.start); closeModal(); render(); toast(existing ? "Termin gespeichert" : "Termin angelegt"); }
+    try { const r = await persist(); ST.UI.cursor = parseLocal(r.start); closeModal(); render(); toast(added ? `${added + 1} Termine gespeichert` : existing ? "Termin gespeichert" : "Termin angelegt"); }
     catch (e) { toastError(e); }
   }); };
   const del = $("#delAppt");
