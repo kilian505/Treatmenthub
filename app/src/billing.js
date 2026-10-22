@@ -125,20 +125,15 @@ export function openCreateInvoice(pid, list) {
 
 // Rechnungslayout wie Manuelas bisherige Rechnungen: Logo und Absender rechts, Positionen als „2 x Leistung á € 78,00“
 const num2 = (n) => new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0);
-const ddmm = (d) => fmtDate(parseLocal(d)).slice(0, 6);
-// Gleiche Leistung zum gleichen Preis zusammenfassen, Behandlungstage anhängen
+// Gleiche Leistung zum gleichen Preis zusammenfassen (ohne Behandlungsdaten)
 function invoiceItems(i) {
   const groups = [];
   i.lines.forEach((l) => {
     let g = groups.find((x) => x.name === l.name && x.price === l.price);
-    if (!g) groups.push((g = { name: l.name, price: l.price, qty: 0, dates: [] }));
-    g.qty += l.qty; if (!g.dates.includes(l.date)) g.dates.push(l.date);
+    if (!g) groups.push((g = { name: l.name, price: l.price, qty: 0 }));
+    g.qty += l.qty;
   });
-  return groups.map((g) => {
-    const ds = g.dates.slice().sort(), last = fmtDate(parseLocal(ds[ds.length - 1]));
-    const when = ds.length === 1 ? last : ds.slice(0, -1).map(ddmm).join(", ") + " und " + last;
-    return { text: `${g.qty} x ${g.name}${g.qty > 1 ? ` á € ${num2(g.price)}` : ""} am ${when}`, sum: g.qty * g.price };
-  });
+  return groups.map((g) => ({ text: `${g.qty} x ${g.name}${g.qty > 1 ? ` á € ${num2(g.price)}` : ""}`, sum: g.qty * g.price }));
 }
 const taxIdLabel = (t) => (/^\d{11}$/.test(t.replace(/\s/g, "")) ? "Steuer-ID" : "Steuernummer");
 const payNote = (i) => (i.payDays > 0 ? `Die Rechnung ist innerhalb von ${i.payDays} Tagen zur Zahlung fällig.` : "");
