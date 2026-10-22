@@ -64,9 +64,9 @@ const patFrom = (r) => ({ id: r.id, first: r.first_name, last: r.last_name, stre
   phone: r.phone, email: r.email, createdAt: r.created_at });
 const patTo = (p) => ({ first_name: p.first, last_name: p.last, street: p.street, zip: p.zip, city: p.city, birth_date: p.birth || null, phone: p.phone || "", email: p.email || "" });
 const apptFrom = (r) => ({ id: r.id, patientId: r.patient_id, start: toLocalStr(new Date(r.starts_at)), duration: r.duration, serviceIds: r.service_ids || [],
-  status: r.status, note: r.note || "", invoiceId: r.invoice_id, locationId: r.location_id || null, needsInvoice: r.needs_invoice !== false, title: r.title || "" });
+  status: r.status, note: r.note || "", invoiceId: r.invoice_id, locationId: r.location_id || null, needsInvoice: r.needs_invoice !== false, title: r.title || "", paymentMethod: r.payment_method || "" });
 const apptTo = (a) => ({ patient_id: a.patientId, starts_at: parseLocal(a.start).toISOString(), duration: a.duration, service_ids: a.serviceIds, status: a.status, note: a.note || "",
-  location_id: a.locationId || null, needs_invoice: a.needsInvoice !== false, title: a.title || "" });
+  location_id: a.locationId || null, needs_invoice: a.needsInvoice !== false, title: a.title || "", payment_method: a.paymentMethod || "" });
 const locFrom = (r) => ({ id: r.id, name: r.name, active: r.active });
 const locTo = (l) => ({ name: l.name, active: l.active !== false });
 const vouFrom = (r) => ({ id: r.id, number: r.number, year: r.year, seq: r.seq, recipient: r.recipient, amount: Number(r.amount), service: r.service || "", date: r.issued_on });
@@ -136,6 +136,7 @@ export const updateVoucher = async (v) =>
 
 // Rechnungsnummern: aktueller Stand und Start nach Umstieg aus einem anderen Rechnungsprogramm
 export const invoiceCounter = async (year) => check(await sb.rpc("invoice_counter", { p_year: year }));
+export const deleteInvoice = async (id) => check(await sb.rpc("delete_invoice", { p_invoice: id }));
 export const setInvoiceNumber = async (id, seq) => invFrom(check(await sb.rpc("set_invoice_number", { p_invoice: id, p_seq: seq })));
 export const setInvoiceStart = async (year, last) => check(await sb.rpc("set_invoice_start", { p_year: year, p_last: last }));
 export const setInvoiceStatus = async (id, status) => invFrom(check(await sb.from("invoices").update({ status }).eq("id", id).select().single()));

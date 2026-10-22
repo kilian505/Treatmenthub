@@ -1,11 +1,11 @@
 // Rechnungen, PDF und Statistik
 import { jsPDF } from "https://cdn.jsdelivr.net/npm/jspdf@2.5.2/+esm";
 import { $, $$, esc, eur, eur0, eurPdf, ymd, parseLocal, addDays, fmtDate, MONTHS, MONTHS_LONG } from "./util.js";
-import { ST, render, go, STATUS, INV_STATUS, pat, svc, loc, pname, apptTotal, apptTitle, billable, unbilledDone, isOwn, taxNote, toast, toastError, modal, closeModal, busy, armed } from "./state.js";
+import { ST, render, go, STATUS, INV_STATUS, PAY, pat, svc, loc, pname, apptTotal, apptTitle, billable, unbilledDone, isOwn, taxNote, toast, toastError, modal, closeModal, busy, armed } from "./state.js";
 import * as api from "./api.js";
 
 /* ---------------- Rechnungen: Reiter ---------------- */
-const BILL_TABS = [["rechnungen", "Mit Rechnung"], ["ohne", "Ohne Rechnung"], ["gutscheine", "Gutscheine"]];
+const BILL_TABS = [["rechnungen", "Mit Rechnung"], ["ohne", "Ohne Rechnung"], ["zahlung", "Zahlungsarten"], ["gutscheine", "Gutscheine"]];
 export function invoicesView(main) {
   const { UI } = ST;
   if (!BILL_TABS.some(([k]) => k === UI.billTab)) UI.billTab = "rechnungen";
@@ -17,6 +17,7 @@ export function invoicesView(main) {
   const host = $("#billHost");
   if (UI.billTab === "ohne") unbilledView(host);
   else if (UI.billTab === "gutscheine") vouchersView(host);
+  else if (UI.billTab === "zahlung") paymentsView(host);
   else invoiceListView(host);
 }
 
@@ -34,10 +35,64 @@ function unbilledView(host) {
     </div>
     <p class="muted" style="margin:0 0 12px;max-width:70ch">Termine, bei denen „Rechnung nein“ gewählt ist. Durchgeführte Behandlungen zählen in der Statistik mit, zum Preis der Leistung.</p>
     <div class="panel table-wrap"><table>
-      <thead><tr><th>Datum</th><th>Kunde</th><th>Ort</th><th>Behandlung</th><th>Status</th><th class="r">Betrag</th></tr></thead>
-      <tbody>${list.map((a) => `<tr class="click" data-aid="${a.id}"><td class="num">${fmtDate(parseLocal(a.start))} ${a.start.slice(11, 16)}</td><td>${esc(pname(pat(a.patientId)))}</td><td>${esc(loc(a.locationId)?.name || "–")}</td><td>${esc(apptTitle(a))}</td><td><span class="pill s-${a.status}">${STATUS[a.status]}</span></td><td class="r num">${eur(apptTotal(a))}</td></tr>`).join("")
-        || '<tr><td colspan="6" class="empty">Noch keine Termine ohne Rechnung. Im Termin wählen Sie dafür „Rechnung nein“.</td></tr>'}</tbody>
+      <thead><tr><th>Datum</th><th>Kunde</th><th>Ort</th><th>Behandlung</th><th>Status</th><th>Bezahlt per</th><th class="r">Betrag</th><th></th></tr></thead>
+      <tbody>${list.map((a) => `<tr class="click" data-aid="${a.id}"><td class="num">${fmtDate(parseLocal(a.start))} ${a.start.slice(11, 16)}</td><td>${esc(pname(pat(a.patientId)))}</td><td>${esc(loc(a.locationId)?.name || "–")}</td><td>${esc(apptTitle(a))}</td><td><span class="pill s-${a.status}">${STATUS[a.status]}</span></td><td>${paySel(a)}</td><td class="r num">${eur(apptTotal(a))}</td><td class="r">${a.serviceIds.length ? `<button class="btn sm" data-mkinv="${a.id}">Doch Rechnung</button>` : ""}</td></tr>`).join("")
+        || '<tr><td colspan="8" class="empty">Noch keine Termine ohne Rechnung. Im Termin wählen Sie dafür „Rechnung nein“.</td></tr>'}</tbody>
     </table></div>`;
+  $$("[data-aid]", host).forEach((r) => (r.onclick = () => import("./records.js").then((m) => m.openAppt(r.dataset.aid))));
+  bindPaySel(host);
+  $$("[data-mkinv]", host).forEach((b) => (b.onclick = (e) => { e.stopPropagation(); billLater(b, ST.S.appts.find((a) => a.id === b.dataset.mkinv)); }));
+}
+// Termin mit „Rechnung nein“ nachträglich abrechnen: auf „Rechnung ja“ stellen und den Rechnungsdialog öffnen
+export function billLater(btn, a) {
+  if (!a) return;
+  busy(btn, async () => {
+    try { Object.assign(a, await api.saveAppt({ ...a, needsInvoice: true })); render(); openCreateInvoice(a.patientId, [a]); }
+    catch (e) { toastError(e); }
+  });
+}
+
+/* ---------------- Zahlungsarten (intern) ---------------- */
+// Kleines Dropdown je Termin, speichert sofort
+const paySel = (a) => `<select class="pay-sel" data-pay="${a.id}" aria-label="Bezahlt per"><option value="">– offen –</option>${Object.entries(PAY).map(([k, v]) => `<option value="${k}" ${a.paymentMethod === k ? "selected" : ""}>${v}</option>`).join("")}</select>`;
+function bindPaySel(host) {
+  $$("[data-pay]", host).forEach((s) => {
+    s.onclick = (e) => e.stopPropagation();
+    s.onchange = async () => {
+      const a = ST.S.appts.find((x) => x.id === s.dataset.pay); if (!a) return;
+      s.disabled = true;
+      try { Object.assign(a, await api.saveAppt({ ...a, paymentMethod: s.value })); toast(s.value ? `Bezahlt per ${PAY[s.value]}` : "Zahlungsart entfernt"); render(); }
+      catch (e) { toastError(e); s.disabled = false; }
+    };
+  });
+}
+function paymentsView(host) {
+  const { S, UI } = ST;
+  const all = S.appts.filter((a) => !isOwn(a) && a.status === "durchgefuehrt" && a.serviceIds.length);
+  const years = [...new Set(all.map((a) => a.start.slice(0, 4)).concat(String(new Date().getFullYear())))].sort().reverse();
+  if (!years.includes(UI.payYear)) UI.payYear = years[0];
+  if (!["alle", "", ...Object.keys(PAY)].includes(UI.payFilter)) UI.payFilter = "alle";
+  const inYear = all.filter((a) => a.start.startsWith(UI.payYear)).sort((a, b) => b.start.localeCompare(a.start));
+  const kinds = [...Object.entries(PAY), ["", "Noch offen / nicht angegeben"]];
+  const sumOf = (k) => inYear.filter((a) => a.paymentMethod === k);
+  const list = UI.payFilter === "alle" ? inYear : sumOf(UI.payFilter);
+  const invNo = (a) => S.invoices.find((i) => i.id === a.invoiceId)?.number;
+  host.innerHTML = `
+    <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+      <label for="payYear" class="muted">Jahr</label><select id="payYear">${years.map((y) => `<option ${y === UI.payYear ? "selected" : ""}>${y}</option>`).join("")}</select>
+      <span class="muted small">Nur intern. Die Zahlungsart erscheint nicht auf Rechnungen.</span></div>
+    <div class="kpis k4">${kinds.map(([k, l]) => `<button class="panel kpi click" data-pf="${k}" style="text-align:left;${UI.payFilter === k ? "outline:2px solid var(--accent)" : ""}"><div class="label">${l}</div><div class="v num">${eur(sumOf(k).reduce((t, a) => t + apptTotal(a), 0))}</div><div class="muted small">${sumOf(k).length} Behandlungen</div></button>`).join("")}</div>
+    <div style="display:flex;align-items:center;gap:.6rem;margin:6px 0 10px"><h2 style="margin:0">${UI.payFilter === "alle" ? "Alle Behandlungen" : esc(kinds.find(([k]) => k === UI.payFilter)[1])} ${UI.payYear}</h2>
+      ${UI.payFilter === "alle" ? "" : '<button class="btn sm" data-pf="alle">Alle zeigen</button>'}</div>
+    <div class="panel table-wrap"><table>
+      <thead><tr><th>Datum</th><th>Kunde</th><th>Ort</th><th>Leistung</th><th>Rechnung</th><th>Bezahlt per</th><th class="r">Betrag</th></tr></thead>
+      <tbody>${list.map((a) => `<tr class="click" data-aid="${a.id}"><td class="num">${fmtDate(parseLocal(a.start))}</td><td>${esc(pname(pat(a.patientId)))}</td><td>${esc(loc(a.locationId)?.name || "–")}</td><td>${esc(apptTitle(a))}</td><td class="num">${a.needsInvoice ? esc(invNo(a) || "noch keine") : "ohne"}</td><td>${paySel(a)}</td><td class="r num">${eur(apptTotal(a))}</td></tr>`).join("")
+        || '<tr><td colspan="7" class="empty">Keine durchgeführten Behandlungen in dieser Auswahl.</td></tr>'}</tbody>
+      ${list.length ? `<tfoot><tr><td colspan="6"><strong>Summe</strong></td><td class="r num"><strong>${eur(list.reduce((t, a) => t + apptTotal(a), 0))}</strong></td></tr></tfoot>` : ""}
+    </table></div>`;
+  $("#payYear").onchange = (e) => { UI.payYear = e.target.value; render(); };
+  bindPaySel(host);
+  $$("[data-pf]", host).forEach((b) => (b.onclick = () => { UI.payFilter = UI.payFilter === b.dataset.pf ? "alle" : b.dataset.pf; render(); }));
   $$("[data-aid]", host).forEach((r) => (r.onclick = () => import("./records.js").then((m) => m.openAppt(r.dataset.aid))));
 }
 
@@ -175,6 +230,8 @@ function invoiceHtml(i) {
 export function openInvoice(id) {
   const { S } = ST;
   const i = S.invoices.find((x) => x.id === id); if (!i) return;
+  // Zahlungsart (intern) gilt für alle Termine dieser Rechnung
+  const its = S.appts.filter((a) => a.invoiceId === i.id), payOf = its.length && its.every((a) => a.paymentMethod === its[0].paymentMethod) ? its[0].paymentMethod : "";
   modal(`
     <div class="modal-head"><h2>Rechnung ${esc(i.number)}</h2><span class="pill s-${i.status}">${INV_STATUS[i.status]}</span><button class="btn ghost sm" data-close aria-label="Schließen">✕</button></div>
     <div class="modal-body">
@@ -184,10 +241,11 @@ export function openInvoice(id) {
         <span class="muted small">Nur Nummern, die noch nicht vergeben sind. Rechnungen, die schon verschickt wurden, besser nicht umnummerieren.</span></div></div>
       <div class="paper-wrap">${invoiceHtml(i)}</div>
       ${i.status === "storniert" ? `<div class="alert info">Storniert am ${fmtDate(parseLocal(i.cancelledAt))}. Die Termine sind wieder abrechenbar. Die Rechnungsnummer bleibt vergeben.</div>`
-        : `<div class="alert info">Erstellte Rechnungen lassen sich nicht mehr bearbeiten oder löschen, nur stornieren. Die Rechnungsnummer kann über „Nummer ändern“ angepasst werden.</div>`}
+        : `<div class="alert info">Erstellte Rechnungen lassen sich nicht bearbeiten. Möglich sind „Nummer ändern“, „Stornieren“ (Nummer bleibt vergeben) und „Löschen“ (Rechnung verschwindet ganz, die Termine sind wieder abrechenbar).</div>`}
     </div>
     <div class="modal-foot">
-      <div class="left">${i.status === "offen" ? '<button class="btn" id="paid">Als bezahlt markieren</button>' : ""}${i.status === "bezahlt" ? '<button class="btn" id="unpaid">Zahlung zurücknehmen</button>' : ""}${i.status !== "storniert" ? '<button class="btn" id="chgNo">Nummer ändern</button><button class="btn danger" id="storno">Stornieren</button>' : ""}</div>
+      <div class="left"><label class="muted small" for="invPay" style="align-self:center">Bezahlt per</label><select id="invPay" aria-label="Bezahlt per (intern)"><option value="">– offen –</option>${Object.entries(PAY).map(([k, v]) => `<option value="${k}" ${payOf === k ? "selected" : ""}>${v}</option>`).join("")}</select>
+        ${i.status === "offen" ? '<button class="btn" id="paid">Als bezahlt markieren</button>' : ""}${i.status === "bezahlt" ? '<button class="btn" id="unpaid">Zahlung zurücknehmen</button>' : ""}${i.status !== "storniert" ? '<button class="btn" id="chgNo">Nummer ändern</button><button class="btn danger" id="storno">Stornieren</button>' : ""}<button class="btn danger" id="delInv">Löschen</button></div>
       <button class="btn" data-close>Schließen</button><button class="btn primary" id="pdf">PDF herunterladen</button>
     </div>`, { wide: true });
   const setStatus = (btn, status, msg) => busy(btn, async () => {
@@ -202,6 +260,19 @@ export function openInvoice(id) {
   const unp = $("#unpaid"); if (unp) unp.onclick = () => setStatus(unp, "offen");
   const st = $("#storno"); if (st) st.onclick = () => { if (armed(st, "Wirklich stornieren?")) setStatus(st, "storniert", `Rechnung ${i.number} storniert`); };
   $("#pdf").onclick = () => downloadPdf(i);
+  $("#invPay").onchange = async (e) => {
+    const v = e.target.value; e.target.disabled = true;
+    try { for (const a of its) Object.assign(a, await api.saveAppt({ ...a, paymentMethod: v })); render(); openInvoice(i.id); toast(v ? `Bezahlt per ${PAY[v]}` : "Zahlungsart entfernt"); }
+    catch (err) { toastError(err); e.target.disabled = false; }
+  };
+  const di = $("#delInv");
+  di.onclick = () => { if (!armed(di, "Endgültig löschen?")) return; busy(di, async () => {
+    try {
+      await api.deleteInvoice(i.id);
+      S.invoices = S.invoices.filter((x) => x.id !== i.id); S.appts.forEach((a) => { if (a.invoiceId === i.id) a.invoiceId = null; });
+      closeModal(); render(); toast(`Rechnung ${i.number} gelöscht`);
+    } catch (e) { toastError(e); }
+  }); };
   const chg = $("#chgNo");
   if (chg) chg.onclick = () => { $("#noBox").hidden = false; $("#inv-seq").focus(); $("#inv-seq").select(); };
   $("#noCancel").onclick = () => ($("#noBox").hidden = true);
