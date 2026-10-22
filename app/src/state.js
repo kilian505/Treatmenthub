@@ -40,7 +40,7 @@ export function overlaps(start, duration, ignoreId) {
 }
 export function taxNote(mode) {
   if (mode === "p4") return "Gemäß § 4 Nr. 14 a UStG ist diese Heilbehandlung von der Umsatzsteuer befreit.";
-  if (mode === "p19") return "Gemäß § 19 UStG wird keine Umsatzsteuer berechnet (Kleinunternehmerregelung).";
+  if (mode === "p19") return "Gemäß § 19 UStG enthält der ausgewiesene Betrag keine Umsatzsteuer.";
   return "";
 }
 

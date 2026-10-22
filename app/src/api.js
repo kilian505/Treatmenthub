@@ -53,11 +53,13 @@ export async function getProfile() {
 /* ---------------- Mapping ---------------- */
 const practiceFrom = (r = {}) => ({ name: r.name || "", owner: r.owner_name || "", title: r.title || "", street: r.street || "", zip: r.zip || "",
   city: r.city || "", phone: r.phone || "", email: r.email || "", taxNo: r.tax_no || "", iban: r.iban || "", bank: r.bank || "",
-  taxMode: r.tax_mode || "p4", payDays: r.pay_days ?? 14 });
+  taxMode: r.tax_mode || "p4", payDays: r.pay_days ?? 14, logo: logoUrl(r.logo) });
+// Logo ist als Daten-URL gespeichert; ältere Einträge enthalten nur die Base64-Daten eines PNG
+const logoUrl = (v) => (!v ? "" : v.startsWith("data:") ? v : "data:image/png;base64," + v);
 const practiceTo = (p) => ({ name: p.name, owner_name: p.owner, title: p.title, street: p.street, zip: p.zip, city: p.city, phone: p.phone,
-  email: p.email, tax_no: p.taxNo, iban: p.iban, bank: p.bank, tax_mode: p.taxMode, pay_days: p.payDays, updated_at: new Date().toISOString() });
-const svcFrom = (r) => ({ id: r.id, name: r.name, code: r.code, duration: r.duration, price: Number(r.price), active: r.active });
-const svcTo = (s) => ({ name: s.name, code: s.code || "", duration: s.duration, price: s.price, active: s.active !== false });
+  email: p.email, tax_no: p.taxNo, iban: p.iban, bank: p.bank, tax_mode: p.taxMode, pay_days: p.payDays, logo: p.logo || "", updated_at: new Date().toISOString() });
+const svcFrom = (r) => ({ id: r.id, name: r.name, code: r.code, duration: r.duration, price: Number(r.price), active: r.active, locationId: r.location_id || null });
+const svcTo = (s) => ({ name: s.name, code: s.code || "", duration: s.duration, price: s.price, active: s.active !== false, location_id: s.locationId || null });
 const patFrom = (r) => ({ id: r.id, first: r.first_name, last: r.last_name, street: r.street, zip: r.zip, city: r.city, birth: r.birth_date || "",
   phone: r.phone, email: r.email, createdAt: r.created_at });
 const patTo = (p) => ({ first_name: p.first, last_name: p.last, street: p.street, zip: p.zip, city: p.city, birth_date: p.birth || null, phone: p.phone || "", email: p.email || "" });
@@ -131,6 +133,9 @@ export async function createVoucher(v) {
 export const updateVoucher = async (v) =>
   vouFrom(check(await sb.from("vouchers").update({ recipient: v.recipient, amount: v.amount, service: v.service || "" }).eq("id", v.id).select().single()));
 
+// Rechnungsnummern: aktueller Stand und Start nach Umstieg aus einem anderen Rechnungsprogramm
+export const invoiceCounter = async (year) => check(await sb.rpc("invoice_counter", { p_year: year }));
+export const setInvoiceStart = async (year, last) => check(await sb.rpc("set_invoice_start", { p_year: year, p_last: last }));
 export const setInvoiceStatus = async (id, status) => invFrom(check(await sb.from("invoices").update({ status }).eq("id", id).select().single()));
 
 /* Bulk-Import für Beispieldaten (nur für leere Test-Praxen) */
