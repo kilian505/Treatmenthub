@@ -268,3 +268,47 @@ body{margin:0}
 @media (max-width:900px){.kpis.k4{grid-template-columns:repeat(2,minmax(0,1fr))}}
 button.kpi{font:inherit;color:inherit;cursor:pointer;width:100%}
 .pay-sel{border:1px solid var(--line);background:var(--surface);color:inherit;border-radius:7px;padding:.25rem .35rem;font:inherit;font-size:.9rem}
+.draft-note{display:flex;align-items:center;justify-content:space-between;gap:.6rem}
+/* Kalender-Listenansicht */
+.ag{--ag-blue:#4d7ee8;--ag-green:#7fb85e;--ag-head:#f1f1f4;max-width:760px;margin:0 auto;background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.ag-top{display:flex;align-items:center;gap:.7rem;padding:.9rem 1rem .4rem;flex-wrap:wrap}
+.ag-title{font-size:1.6rem;margin:0;font-weight:700}
+.ag-ic{border:0;background:none;color:var(--ag-blue);width:38px;height:38px;padding:4px;cursor:pointer}
+.ag-ic svg{width:100%;height:100%}
+.ag-week{display:grid;grid-template-columns:28px repeat(7,1fr) 28px;align-items:center;padding:.3rem .3rem .7rem;background:#f8f8fa;border-bottom:1px solid var(--line)}
+.ag-nav{border:0;background:none;font-size:1.5rem;color:var(--muted);cursor:pointer;padding:0}
+.ag-day{border:0;background:none;display:flex;flex-direction:column;align-items:center;gap:.35rem;cursor:pointer;color:var(--fg);padding:0;font:inherit}
+.ag-day small{font-size:.95rem;color:var(--muted)}
+.ag-day b{font-size:1.35rem;font-weight:500;width:2.6rem;height:2.6rem;display:grid;place-items:center;border-radius:12px}
+.ag-day.today b{background:#ececf1}
+.ag-day.sel b{background:var(--ag-blue);color:#fff}
+.ag-day i{display:flex;gap:3px;height:6px}
+.ag-day em{width:6px;height:6px;border-radius:50%;background:var(--ag-green)}
+.ag-actions{display:flex;gap:.5rem;justify-content:flex-end;padding:.6rem 1rem;flex-wrap:wrap}
+.ag-dhead{display:flex;align-items:center;justify-content:space-between;background:var(--ag-head);padding:.45rem 1rem;font-size:1.05rem}
+.ag-dhead.today span{font-weight:700}
+.ag-add{border:0;background:none;font-size:1.7rem;line-height:1;cursor:pointer;color:var(--fg);padding:0 .2rem}
+.ag-row{display:grid;grid-template-columns:5.2rem 1fr;gap:.8rem;align-items:center;padding:.45rem 1rem}
+.ag-row:first-of-type{padding-top:.8rem}
+.ag-time{display:flex;flex-direction:column}
+.ag-time b{font-size:1.25rem;font-weight:600}
+.ag-time span{color:var(--muted)}
+.ag-card{border:0;border-radius:12px;background:var(--ag-green);color:#fff;text-align:left;padding:.75rem 1rem;cursor:pointer;min-width:0;display:flex;flex-direction:column;gap:.2rem;font:inherit;position:relative}
+.ag-card b{font-size:1.25rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ag-card span{display:flex;align-items:center;gap:.35rem;font-size:1rem;opacity:.95}
+.ag-card svg{width:1.05rem;height:1.05rem;flex:none}
+.ag-card:hover{filter:brightness(.96)}
+.ag-card.s-geplant{background:var(--ag-green)}
+.ag-card.s-durchgefuehrt{background:#5f9c43}
+.ag-card.s-ausgefallen{background:#d68b3a}
+.ag-card.s-abgesagt{background:#b9bec4;text-decoration:line-through}
+.ag-card.own{background:#9b8cc4}
+.ag-card.billed::after{content:"€";position:absolute;top:.6rem;right:.8rem;font-weight:700}
+.ag-empty{text-align:center;color:var(--muted);padding:1.6rem 0;font-size:1.1rem}
+.ag-more{display:block;margin:1rem auto}
+@media (max-width:760px){
+  .ag{border:0;border-radius:0;margin:-20px -16px 0}
+  .ag-top .seg{order:3;width:100%}
+  .ag-row{grid-template-columns:4.4rem 1fr;gap:.6rem}
+  .ag-card b{font-size:1.1rem}
+}

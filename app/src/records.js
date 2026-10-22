@@ -5,9 +5,16 @@ import * as api from "./api.js";
 import { openInvoice, openCreateInvoice } from "./billing.js";
 
 /* ---------------- Termin ---------------- */
+// Entwurf: angefangene Eingaben im Termin-Dialog bleiben im Browser, bis gespeichert oder verworfen wird
+const draftKey = (id) => `tm:apptDraft:${ST.profile?.id || ""}:${id || "neu"}`;
+export function getDraft(id) { try { return JSON.parse(localStorage.getItem(draftKey(id)) || "null"); } catch (_) { return null; } }
+function setDraft(id, d) { try { if (d) localStorage.setItem(draftKey(id), JSON.stringify(d)); else localStorage.removeItem(draftKey(id)); } catch (_) {} }
+const DRAFT_FIELDS = ["patientId", "start", "duration", "serviceIds", "status", "note", "locationId", "needsInvoice", "title", "paymentMethod"];
+
 export function openAppt(id, startStr, presetPatient) {
   const { S } = ST;
   const existing = id ? S.appts.find((a) => a.id === id) : null;
+  if (!existing && !startStr) { const d = new Date(); d.setMinutes(0, 0, 0); d.setHours(Math.min(Math.max(d.getHours() + 1, 8), 18)); startStr = toLocalStr(d); }
   const a = existing ? structuredClone(existing)
     : { id: null, patientId: presetPatient || null, start: startStr, duration: 0, serviceIds: [S.services.find((s) => s.active)?.id].filter(Boolean), status: "geplant", note: "", invoiceId: null, locationId: null, needsInvoice: true, title: "" };
   const locked = !!a.invoiceId;
@@ -15,10 +22,19 @@ export function openAppt(id, startStr, presetPatient) {
   let mode = a.patientId ? "chosen" : S.patients.length ? "search" : "new";
   let durManual = existing ? a.duration !== a.serviceIds.reduce((t, i) => t + (svc(i)?.duration || 0), 0) : false;
   const newP = { first: "", last: "", street: "", zip: "", city: "", birth: "", phone: "", email: "" };
+  const extra = []; // Weitere Behandlungstage: werden beim Speichern als eigene Termine angelegt
+  const draft = locked ? null : getDraft(id);
+  if (draft) {
+    Object.assign(a, draft.a); own = draft.own; mode = draft.mode; durManual = draft.durManual;
+    Object.assign(newP, draft.newP); extra.push(...(draft.extra || []));
+    if (a.patientId && !pat(a.patientId)) { a.patientId = null; mode = "search"; }
+    a.serviceIds = a.serviceIds.filter((sid) => svc(sid));
+  }
 
   const ov = modal(`
     <div class="modal-head"><h2 id="apHead"></h2>${locked ? '<span class="pill s-bezahlt">abgerechnet</span>' : ""}<button class="btn ghost sm" data-close aria-label="Schließen">✕</button></div>
     <form class="modal-body" id="apptForm" novalidate>
+      ${draft ? '<div class="alert info draft-note"><span>Nicht gespeicherter Entwurf wiederhergestellt.</span><button type="button" class="btn sm" id="dropDraft">Verwerfen</button></div>' : ""}
       ${locked ? '<div class="alert info">Dieser Termin steht auf einer Rechnung und kann nicht mehr geändert werden. Für Änderungen die Rechnung stornieren.</div>' : ""}
       ${locked ? "" : `<div class="tabs-mini" role="group" aria-label="Art des Termins"><button type="button" data-kind="treat" aria-pressed="${!own}">Behandlung</button><button type="button" data-kind="own" aria-pressed="${own}">Eigener Termin (ohne Behandlung)</button></div>`}
       <div class="section own-only"><div class="field"><label for="ap-title">Titel</label><input id="ap-title" autocomplete="off" maxlength="120" placeholder="z. B. Privat, Arzttermin, Fortbildung, Besprechung" value="${esc(a.title)}"></div></div>
@@ -110,9 +126,15 @@ export function openAppt(id, startStr, presetPatient) {
     extra.forEach((x) => (x.sid = mapSvc(x.sid) || ""));
     renderItems(); renderExtra(); sync();
   }
-  const opts = (sel) => S.services.filter((s) => (s.active && fitsLoc(s)) || s.id === sel).map((s) => `<option value="${s.id}" ${s.id === sel ? "selected" : ""}>${esc(s.name)} · ${s.duration} Min · ${eur(s.price)}${!a.locationId && s.locationId ? " · " + esc(loc(s.locationId)?.name || "") : ""}</option>`).join("");
-  // Weitere Behandlungstage: werden beim Speichern als eigene Termine angelegt
-  const extra = [];
+  // Leistungen nach Hotel/Ort gruppiert: gewählter Ort zuerst, dann alphabetisch, Leistungen ohne festen Ort zuletzt
+  const opts = (sel) => {
+    const groups = new Map();
+    S.services.filter((s) => (s.active && fitsLoc(s)) || s.id === sel).forEach((s) => { const k = s.locationId || ""; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(s); });
+    const rank = (k) => (k === a.locationId ? 0 : k ? 1 : 2);
+    return [...groups.keys()].sort((x, y) => rank(x) - rank(y) || (loc(x)?.name || "").localeCompare(loc(y)?.name || "", "de"))
+      .map((k) => `<optgroup label="${esc(k ? loc(k)?.name || "Unbekannter Ort" : "Alle Orte")}">${groups.get(k).sort((x, y) => x.name.localeCompare(y.name, "de"))
+        .map((s) => `<option value="${s.id}" ${s.id === sel ? "selected" : ""}>${esc(s.name)} · ${s.duration} Min · ${eur(s.price)}</option>`).join("")}</optgroup>`).join("");
+  };
   function renderExtra() {
     const wrap = $("#extraDays"); if (!wrap) return;
     wrap.innerHTML = extra.map((x, k) => `<div class="item-row extra-row"><input type="date" data-k="${k}" data-x="date" value="${x.date}" aria-label="Datum Tag ${k + 2}"><input type="time" step="300" data-k="${k}" data-x="time" value="${x.time}" aria-label="Uhrzeit Tag ${k + 2}"><select data-k="${k}" data-x="sid" aria-label="Leistung Tag ${k + 2}">${opts(x.sid)}</select><button type="button" class="btn ghost sm" data-rmday="${k}" aria-label="Tag entfernen">✕</button></div>`).join("");
@@ -159,9 +181,22 @@ export function openAppt(id, startStr, presetPatient) {
     if (own) setTimeout(() => $("#ap-title").focus(), 30);
     $("#formErr").innerHTML = ""; sync();
   }
-  renderPat(); renderItems(); renderLoc(); billHint(); checkOverlap();
-  if (!existing && !locked) sync();
+  renderPat(); renderItems(); renderExtra(); renderLoc(); billHint(); checkOverlap();
+  if (!existing && !locked && !draft) sync();
   setKind(own);
+  // Entwurf bei jeder Eingabe sichern; unverändert gegenüber dem Öffnen wird nichts gespeichert
+  const snap = () => {
+    const f = { ...a, title: $("#ap-title").value, start: `${$("#ap-date").value}T${$("#ap-time").value}`, duration: +$("#ap-dur").value || a.duration, note: $("#ap-note").value, paymentMethod: $("#ap-pay").value };
+    return { a: Object.fromEntries(DRAFT_FIELDS.map((k) => [k, f[k]])), own, mode: mode === "chosen" && !a.patientId ? "search" : mode, newP, extra, durManual };
+  };
+  let done = false;
+  const base = draft ? null : JSON.stringify(snap());
+  const saveDraft = () => { if (done || !ov.isConnected) return; const d = snap(); setDraft(id, JSON.stringify(d) === base ? null : d); };
+  const clearDraft = () => { done = true; setDraft(id, null); };
+  if (!locked) ["input", "change", "click", "mousedown"].forEach((t) => ov.addEventListener(t, () => setTimeout(saveDraft, 0)));
+  ov.onclose = () => { if (!existing) render(); }; // Kalender zeigt „Entwurf fortsetzen“
+  const dd = $("#dropDraft");
+  if (dd) dd.onclick = () => { clearDraft(); openAppt(id, startStr, presetPatient); };
   $$("[data-kind]", ov).forEach((b) => (b.onclick = () => setKind(b.dataset.kind === "own")));
   if (!locked) {
     $("#ap-loc").onchange = (e) => {
@@ -226,7 +261,7 @@ export function openAppt(id, startStr, presetPatient) {
   }
   const saveBtn = $("#saveAppt");
   if (saveBtn) saveBtn.onclick = () => { if (!validate()) return; busy(saveBtn, async () => {
-    try { const r = await persist(); ST.UI.cursor = parseLocal(r.start); closeModal(); render(); toast(added ? `${added + 1} Termine gespeichert` : existing ? "Termin gespeichert" : "Termin angelegt"); }
+    try { const r = await persist(); clearDraft(); ST.UI.cursor = parseLocal(r.start); closeModal(); render(); toast(added ? `${added + 1} Termine gespeichert` : existing ? "Termin gespeichert" : "Termin angelegt"); }
     catch (e) { toastError(e); }
   }); };
   // Abgerechnete Termine: nur die Zahlungsart ist noch änderbar
@@ -237,19 +272,19 @@ export function openAppt(id, startStr, presetPatient) {
   });
   const del = $("#delAppt");
   if (del) del.onclick = () => { if (!armed(del, "Wirklich löschen?")) return; busy(del, async () => {
-    try { await api.deleteAppt(existing.id); S.appts = S.appts.filter((x) => x.id !== existing.id); closeModal(); render(); toast("Termin gelöscht"); }
+    try { await api.deleteAppt(existing.id); clearDraft(); S.appts = S.appts.filter((x) => x.id !== existing.id); closeModal(); render(); toast("Termin gelöscht"); }
     catch (e) { toastError(e); }
   }); };
   const bill = $("#billNow");
   if (bill) bill.onclick = () => { if (!validate()) return; busy(bill, async () => {
     try {
-      const r = await persist();
+      const r = await persist(); clearDraft();
       render(); openCreateInvoice(r.patientId, [r]);
     } catch (e) { toastError(e); }
   }); };
   const bl = $("#billLate");
   if (bl) bl.onclick = () => { if (!validate()) return; busy(bl, async () => {
-    try { a.needsInvoice = true; const r = await persist(); render(); openCreateInvoice(r.patientId, [r]); }
+    try { a.needsInvoice = true; const r = await persist(); clearDraft(); render(); openCreateInvoice(r.patientId, [r]); }
     catch (e) { toastError(e); }
   }); };
   const si = $("#showInv"); if (si) si.onclick = () => openInvoice(a.invoiceId);
