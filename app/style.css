@@ -8,7 +8,7 @@
   --c1:#00809a; --c2:#c4762c; --c3:#8a6fb0;
   --f-display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
   --f-body:"Source Sans 3", "Segoe UI", system-ui, -apple-system, sans-serif;
-  --hour:52px;
+  --hour:52px; color-scheme:light;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#0f171b; --surface:#162127; --surface-2:#1d2a31; --fg:#e2eaed; --muted:#93a5ad; --line:#2a3a42;

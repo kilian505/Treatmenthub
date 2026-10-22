@@ -35,6 +35,7 @@ Code: Mac → Dokumente/Treatment Manager · Supabase-Projekt `treatment-manager
 - Rechnung löschen: `delete_invoice` entfernt die Rechnung ganz, Termine werden wieder abrechenbar; war es die letzte Nummer des Jahres, wird der Zähler zurückgesetzt (Nummer wird wieder vergeben).
 - Zahlungsart (PayPal, Überweisung, Bar) je Termin, nur intern: optional im Termin, nachträglich per Auswahl in Rechnung, „Ohne Rechnung“ und im Reiter „Zahlungsarten“ (Übersicht mit Summen je Jahr). Erscheint nie auf der Rechnung.
 - „Doch Rechnung erstellen“: Termine mit „Rechnung nein“ lassen sich nachträglich abrechnen (setzt „Rechnung ja“ und öffnet den Rechnungsdialog).
+- Die App wird immer hell angezeigt (`data-theme="light"`), auch wenn das System auf Dunkelmodus steht.
 - `appointments.needs_invoice`: „Rechnung ja/nein“. Bei „nein“ nicht abrechenbar, zählt aber in der Statistik (Preis der Leistungen, nach Termindatum)
 - `vouchers` + `voucher_counters`: Gutscheine mit Nummer GU+Jahr+lfd. Nr. (GU202601), Name, Betrag, Leistung; nur über `create_voucher` anlegbar, Nummer/Datum unveränderbar
 - Funktionen: `create_invoice`, `admin_list_accounts`, `admin_set_status`; Edge Function `admin-accounts` (invite, reject)
