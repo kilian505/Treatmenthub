@@ -64,15 +64,15 @@ const patFrom = (r) => ({ id: r.id, first: r.first_name, last: r.last_name, stre
   phone: r.phone, email: r.email, createdAt: r.created_at });
 const patTo = (p) => ({ first_name: p.first, last_name: p.last, street: p.street, zip: p.zip, city: p.city, birth_date: p.birth || null, phone: p.phone || "", email: p.email || "" });
 const apptFrom = (r) => ({ id: r.id, patientId: r.patient_id, start: toLocalStr(new Date(r.starts_at)), duration: r.duration, serviceIds: r.service_ids || [],
-  status: r.status, note: r.note || "", invoiceId: r.invoice_id, locationId: r.location_id || null, needsInvoice: r.needs_invoice !== false });
+  status: r.status, note: r.note || "", invoiceId: r.invoice_id, locationId: r.location_id || null, needsInvoice: r.needs_invoice !== false, title: r.title || "" });
 const apptTo = (a) => ({ patient_id: a.patientId, starts_at: parseLocal(a.start).toISOString(), duration: a.duration, service_ids: a.serviceIds, status: a.status, note: a.note || "",
-  location_id: a.locationId || null, needs_invoice: a.needsInvoice !== false });
+  location_id: a.locationId || null, needs_invoice: a.needsInvoice !== false, title: a.title || "" });
 const locFrom = (r) => ({ id: r.id, name: r.name, active: r.active });
 const locTo = (l) => ({ name: l.name, active: l.active !== false });
 const vouFrom = (r) => ({ id: r.id, number: r.number, year: r.year, seq: r.seq, recipient: r.recipient, amount: Number(r.amount), service: r.service || "", date: r.issued_on });
 const invFrom = (r) => ({ id: r.id, number: r.number, patientId: r.patient_id, date: r.invoice_date, payDays: r.pay_days, patient: r.patient,
   practice: practiceFrom(r.practice), lines: (r.lines || []).map((l) => ({ ...l, price: Number(l.price), qty: Number(l.qty) })), total: Number(r.total),
-  status: r.status, paidAt: r.paid_at, cancelledAt: r.cancelled_at, period: [r.period_start, r.period_end] });
+  status: r.status, paidAt: r.paid_at, cancelledAt: r.cancelled_at, period: [r.period_start, r.period_end], location: r.location || "" });
 
 async function fetchAll(table, order) {
   const out = []; const size = 1000;
@@ -114,10 +114,11 @@ export async function saveAppt(a) {
 }
 export const deleteAppt = async (id) => check(await sb.from("appointments").delete().eq("id", id));
 
-export async function createInvoice(patientId, apptIds, date) {
+export async function createInvoice(patientId, apptIds, date, locationId) {
   const args = { p_patient: patientId, p_appointments: apptIds };
   if (date) args.p_date = date;
-  return invFrom(check(await sb.rpc("create_invoice", args)));
+  if (locationId) args.p_location = locationId;
+  return invFrom(check(await sb.rpc("create_invoice_at", args)));
 }
 export async function saveLocation(l) {
   const q = l.id ? sb.from("locations").update(locTo(l)).eq("id", l.id) : sb.from("locations").insert(locTo(l));

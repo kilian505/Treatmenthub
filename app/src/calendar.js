@@ -1,6 +1,6 @@
 // Kalender: Tag, Woche, Monat
 import { $, $$, esc, pad, ymd, hm, parseLocal, toLocalStr, addDays, addMin, startOfWeek, fmtDate, WD, MONTHS_LONG } from "./util.js";
-import { ST, render, go, setView, STATUS, pat, loc, pname, apptTitle } from "./state.js";
+import { ST, render, go, setView, STATUS, pat, loc, pname, apptTitle, apptWho, isOwn } from "./state.js";
 import { openAppt } from "./records.js";
 import { openVoucher } from "./billing.js";
 
@@ -30,7 +30,7 @@ export function calendarView(main) {
       </div>
     </div>
     <div id="calHost"></div>
-    <div class="legend">${Object.entries(STATUS).map(([k, v]) => `<span class="pill s-${k}">${v}</span>`).join("")}
+    <div class="legend">${Object.entries(STATUS).map(([k, v]) => `<span class="pill s-${k}">${v}</span>`).join("")}<span class="pill own">Eigener Termin</span>
       <span class="muted">€ = abgerechnet · ${view === "monat" ? "Klick auf einen Tag öffnet die Tagesansicht" : "Klick in eine freie Zeit legt einen Termin an"}</span></div>`;
 
   if (view === "monat") monthGrid($("#calHost"), todayStr); else timeGrid($("#calHost"), view, todayStr);
@@ -75,11 +75,11 @@ function timeGrid(host, view, todayStr) {
       const s = parseLocal(a.start);
       const top = (s.getHours() + s.getMinutes() / 60 - DAY_START) * hourPx, h = Math.max(22, (a.duration / 60) * hourPx - 2);
       const el = document.createElement("button");
-      el.className = `ev s-${a.status}${a.invoiceId ? " billed" : ""}`;
+      el.className = `ev s-${a.status}${a.invoiceId ? " billed" : ""}${isOwn(a) ? " own" : ""}`;
       el.style.top = top + "px"; el.style.height = h + "px";
       if (nL > 1) { el.style.left = `calc(${(lane.get(a.id) / nL) * 100}% + 3px)`; el.style.right = "auto"; el.style.width = `calc(${100 / nL}% - 6px)`; }
-      el.innerHTML = `<b>${hm(s)} ${esc(pname(pat(a.patientId)))}</b><span>${esc(apptTitle(a))}${a.locationId && loc(a.locationId) ? " · " + esc(loc(a.locationId).name) : ""}</span>`;
-      el.title = `${hm(s)}–${hm(addMin(s, a.duration))} · ${pname(pat(a.patientId))}${a.locationId && loc(a.locationId) ? " · " + loc(a.locationId).name : ""} · ${STATUS[a.status]}${a.needsInvoice ? "" : " · ohne Rechnung"}`;
+      el.innerHTML = isOwn(a) ? `<b>${hm(s)} ${esc(a.title)}</b>${a.note ? `<span>${esc(a.note)}</span>` : ""}` : `<b>${hm(s)} ${esc(pname(pat(a.patientId)))}</b><span>${esc(apptTitle(a))}${a.locationId && loc(a.locationId) ? " · " + esc(loc(a.locationId).name) : ""}</span>`;
+      el.title = isOwn(a) ? `${hm(s)}–${hm(addMin(s, a.duration))} · ${a.title} · Eigener Termin` : `${hm(s)}–${hm(addMin(s, a.duration))} · ${pname(pat(a.patientId))}${a.locationId && loc(a.locationId) ? " · " + loc(a.locationId).name : ""} · ${STATUS[a.status]}${a.needsInvoice ? "" : " · ohne Rechnung"}`;
       el.onclick = (ev) => { ev.stopPropagation(); openAppt(a.id); };
       col.appendChild(el);
     });
@@ -112,9 +112,9 @@ function monthGrid(host, todayStr) {
     const out = d.getMonth() !== first.getMonth();
     cells += `<div class="mcell${out ? " out" : ""}${k === todayStr ? " today" : ""}" data-day="${k}" role="button" tabindex="0" aria-label="${fmtDate(d)}, ${active.length} Termine">
       <div class="mnum"><span class="num">${d.getDate()}</span>${active.length ? `<span class="mcount num">${active.length}</span>` : ""}</div>
-      <div class="mchips">${list.slice(0, MAX).map((a) => `<button class="mchip s-${a.status}${a.invoiceId ? " billed" : ""}" data-aid="${a.id}" title="${esc(a.start.slice(11, 16) + " " + pname(pat(a.patientId)) + " · " + apptTitle(a))}"><span class="num">${a.start.slice(11, 16)}</span> ${esc(pat(a.patientId)?.last || "")}</button>`).join("")}
+      <div class="mchips">${list.slice(0, MAX).map((a) => `<button class="mchip s-${a.status}${a.invoiceId ? " billed" : ""}${isOwn(a) ? " own" : ""}" data-aid="${a.id}" title="${esc(a.start.slice(11, 16) + " " + apptWho(a) + (isOwn(a) ? "" : " · " + apptTitle(a)))}"><span class="num">${a.start.slice(11, 16)}</span> ${esc(isOwn(a) ? a.title : pat(a.patientId)?.last || "")}</button>`).join("")}
         ${list.length > MAX ? `<span class="mmore">+${list.length - MAX} weitere</span>` : ""}</div>
-      <div class="mdots">${list.slice(0, 6).map((a) => `<i class="s-${a.status}"></i>`).join("")}</div>
+      <div class="mdots">${list.slice(0, 6).map((a) => `<i class="s-${a.status}${isOwn(a) ? " own" : ""}"></i>`).join("")}</div>
     </div>`;
   }
   host.innerHTML = `<div class="panel month">

@@ -1,7 +1,7 @@
 // Rechnungen, PDF und Statistik
 import { jsPDF } from "https://cdn.jsdelivr.net/npm/jspdf@2.5.2/+esm";
 import { $, $$, esc, eur, eur0, eurPdf, ymd, parseLocal, addDays, fmtDate, MONTHS, MONTHS_LONG } from "./util.js";
-import { ST, render, go, STATUS, INV_STATUS, pat, svc, loc, pname, apptTotal, apptTitle, billable, unbilledDone, taxNote, toast, toastError, modal, closeModal, busy, armed } from "./state.js";
+import { ST, render, go, STATUS, INV_STATUS, pat, svc, loc, pname, apptTotal, apptTitle, billable, unbilledDone, isOwn, taxNote, toast, toastError, modal, closeModal, busy, armed } from "./state.js";
 import * as api from "./api.js";
 
 /* ---------------- Rechnungen: Reiter ---------------- */
@@ -23,7 +23,7 @@ export function invoicesView(main) {
 /* ---------------- Behandlungen ohne Rechnung ---------------- */
 function unbilledView(host) {
   const { S } = ST;
-  const list = S.appts.filter((a) => !a.needsInvoice && a.status !== "abgesagt").sort((a, b) => b.start.localeCompare(a.start));
+  const list = S.appts.filter((a) => !isOwn(a) && !a.needsInvoice && a.status !== "abgesagt").sort((a, b) => b.start.localeCompare(a.start));
   const done = unbilledDone(), y = String(new Date().getFullYear());
   const sumYear = done.filter((a) => a.start.startsWith(y)).reduce((t, a) => t + apptTotal(a), 0);
   host.innerHTML = `
@@ -62,21 +62,65 @@ function invoiceListView(main) {
       : `<div class="panel empty" style="margin-bottom:22px">Alle durchgeführten Termine sind abgerechnet.</div>`}
     <h2 style="margin-bottom:10px">Alle Rechnungen</h2>
     <div class="panel table-wrap"><table>
-      <thead><tr><th>Nummer</th><th>Datum</th><th>Kunde</th><th>Fällig</th><th>Status</th><th class="r">Betrag</th></tr></thead>
+      <thead><tr><th>Nummer</th><th>Datum</th><th>Kunde</th><th>Ort</th><th>Fällig</th><th>Status</th><th class="r">Betrag</th></tr></thead>
       <tbody>${S.invoices.slice().sort((a, b) => b.date.localeCompare(a.date) || b.number.localeCompare(a.number)).map((i) => {
         const due = addDays(parseLocal(i.date), i.payDays), over = i.status === "offen" && due < new Date();
-        return `<tr class="click" data-iid="${i.id}"><td class="num"><strong>${i.number}</strong></td><td class="num">${fmtDate(parseLocal(i.date))}</td><td>${esc(i.patient.name)}</td><td class="num">${i.status === "offen" ? fmtDate(due) + (over ? ' <span class="pill s-ausgefallen">überfällig</span>' : "") : "–"}</td><td><span class="pill s-${i.status}">${INV_STATUS[i.status]}</span></td><td class="r num">${eur(i.total)}</td></tr>`;
-      }).join("") || '<tr><td colspan="6" class="empty">Noch keine Rechnungen.</td></tr>'}</tbody>
+        return `<tr class="click" data-iid="${i.id}"><td class="num"><strong>${i.number}</strong></td><td class="num">${fmtDate(parseLocal(i.date))}</td><td>${esc(i.patient.name)}</td><td>${esc(i.location) || '<span class="muted">–</span>'}</td><td class="num">${i.status === "offen" ? fmtDate(due) + (over ? ' <span class="pill s-ausgefallen">überfällig</span>' : "") : "–"}</td><td><span class="pill s-${i.status}">${INV_STATUS[i.status]}</span></td><td class="r num">${eur(i.total)}</td></tr>`;
+      }).join("") || '<tr><td colspan="7" class="empty">Noch keine Rechnungen.</td></tr>'}</tbody>
     </table></div>`;
-  $$("[data-bill]").forEach((b) => (b.onclick = () => busy(b, async () => {
-    try {
-      const list = groups[b.dataset.bill];
-      const inv = await api.createInvoice(b.dataset.bill, list.map((a) => a.id));
-      S.invoices.push(inv); list.forEach((a) => (a.invoiceId = inv.id));
-      render(); openInvoice(inv.id); toast(`Rechnung ${inv.number} erstellt`);
-    } catch (e) { toastError(e); }
-  })));
+  $$("[data-bill]").forEach((b) => (b.onclick = () => openCreateInvoice(b.dataset.bill, groups[b.dataset.bill])));
   $$("[data-iid]").forEach((r) => (r.onclick = () => openInvoice(r.dataset.iid)));
+}
+
+// Rechnung erstellen: Ort (Hotel) wählen oder neu anlegen, Rechnungsdatum
+export function openCreateInvoice(pid, list) {
+  const { S } = ST;
+  // Vorschlag: der Ort, an dem die meisten dieser Termine stattfanden
+  const cnt = {}; list.forEach((a) => a.locationId && (cnt[a.locationId] = (cnt[a.locationId] || 0) + 1));
+  let locId = Object.entries(cnt).sort((x, y) => y[1] - x[1])[0]?.[0] || "";
+  modal(`
+    <div class="modal-head"><h2>Rechnung erstellen</h2><button class="btn ghost sm" data-close aria-label="Schließen">✕</button></div>
+    <div class="modal-body">
+      <p style="margin:0"><strong>${esc(pname(pat(pid)))}</strong> · ${list.length} ${list.length > 1 ? "Termine" : "Termin"} · <span class="num">${eur(list.reduce((t, a) => t + apptTotal(a), 0))}</span></p>
+      <div class="grid2">
+        <div class="field"><label for="ci-loc">Ort der Behandlung (Hotel)</label><select id="ci-loc"></select></div>
+        <div class="field"><label for="ci-date">Rechnungsdatum</label><input id="ci-date" type="date" value="${ymd(new Date())}"></div>
+      </div>
+      <div id="ciNewBox" hidden><div class="grid2" style="grid-template-columns:1fr auto;align-items:end">
+        <div class="field"><label for="ci-newloc">Neuer Ort (z. B. Name des Hotels)</label><input id="ci-newloc" autocomplete="off"></div>
+        <button type="button" class="btn" id="ci-addloc">Hinzufügen</button></div></div>
+      <p class="muted small" style="margin:0">Der Ort erscheint auf der Rechnung unter der Rechnungsnummer.</p>
+    </div>
+    <div class="modal-foot"><button class="btn" data-close>Abbrechen</button><button class="btn primary" id="ciGo">Rechnung erstellen</button></div>`);
+  const sel = $("#ci-loc");
+  const renderSel = () => {
+    const ls = S.locations.filter((l) => l.active || l.id === locId).sort((x, y) => x.name.localeCompare(y.name, "de"));
+    sel.innerHTML = `<option value="">– Kein Ort –</option>${ls.map((l) => `<option value="${l.id}" ${l.id === locId ? "selected" : ""}>${esc(l.name)}</option>`).join("")}<option value="__neu">+ Neuen Ort anlegen …</option>`;
+  };
+  renderSel();
+  sel.onchange = () => {
+    if (sel.value === "__neu") { $("#ciNewBox").hidden = false; sel.value = locId; setTimeout(() => $("#ci-newloc").focus(), 20); } else locId = sel.value;
+  };
+  const addLoc = () => {
+    const name = $("#ci-newloc").value.trim(); if (!name) return;
+    busy($("#ci-addloc"), async () => {
+      try {
+        const l = S.locations.find((x) => x.name.toLowerCase() === name.toLowerCase()) || await api.saveLocation({ name });
+        if (!S.locations.includes(l)) S.locations.push(l);
+        locId = l.id; $("#ci-newloc").value = ""; $("#ciNewBox").hidden = true; renderSel();
+      } catch (e) { toastError(e); }
+    });
+  };
+  $("#ci-addloc").onclick = addLoc;
+  $("#ci-newloc").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); addLoc(); } };
+  const btn = $("#ciGo");
+  btn.onclick = () => busy(btn, async () => {
+    try {
+      const inv = await api.createInvoice(pid, list.map((a) => a.id), $("#ci-date").value || null, locId || null);
+      S.invoices.push(inv); list.forEach((a) => (a.invoiceId = inv.id));
+      closeModal(); render(); openInvoice(inv.id); toast(`Rechnung ${inv.number} erstellt`);
+    } catch (e) { toastError(e); }
+  });
 }
 
 // Rechnungslayout wie Manuelas bisherige Rechnungen: Logo und Absender rechts, Positionen als „2 x Leistung á € 78,00“
@@ -109,7 +153,7 @@ function invoiceHtml(i) {
       <div>${[pr.owner, pr.street, `${pr.zip} ${pr.city}`].filter((t) => t.trim()).map(esc).join("<br>")}${pr.phone ? `<br>☎ ${esc(pr.phone)}` : ""}${pr.email ? `<br>✉ ${esc(pr.email)}` : ""}</div></div>
     <div class="inv-to">${to}</div>
     <div class="inv-date">${esc(pr.city)}${pr.city ? ", " : ""}${fmtDate(parseLocal(i.date))}</div>
-    <p class="inv-no">Rechnung Nr. ${esc(i.number)}${i.status === "storniert" ? ' <span class="inv-storno">STORNIERT</span>' : ""}</p>
+    <p class="inv-no">Rechnung Nr. ${esc(i.number)}${i.status === "storniert" ? ' <span class="inv-storno">STORNIERT</span>' : ""}${i.location ? `<span class="inv-loc">Ort der Behandlung: ${esc(i.location)}</span>` : ""}</p>
     <p>${SALUTATION}</p><p>${INTRO}</p>
     <table class="inv-items"><tbody>${items.map((it) => `<tr><td>${esc(it.text)}</td><td class="r num">€ ${num2(it.sum)}</td></tr>`).join("")}
       <tr class="inv-sum"><td>Gesamtsumme</td><td class="r num">€ ${num2(i.total)}</td></tr></tbody></table>
@@ -176,7 +220,8 @@ function buildPdf(i) {
   doc.text(`${pr.city ? pr.city + ", " : ""}${fmtDate(parseLocal(i.date))}`, R, y, { align: "right" });
   y += 20; doc.setFont("helvetica", "bold"); doc.text(`Rechnung Nr. ${i.number}`, L, y);
   if (i.status === "storniert") { doc.setTextColor(170, 30, 30); doc.text("STORNIERT", R, y, { align: "right" }); doc.setTextColor(25); }
-  doc.setFont("helvetica", "normal"); y += 18;
+  doc.setFont("helvetica", "normal");
+  if (i.location) { y += 6; doc.text(`Ort der Behandlung: ${i.location}`, L, y); y += 12; } else y += 18;
   doc.text(SALUTATION, L, y); y += 9;
   doc.text(doc.splitTextToSize(INTRO, R - L), L, y); y += 12;
   // Positionen
@@ -323,7 +368,7 @@ function yearStats(y) {
   noInv.forEach((a) => { const m = +a.start.slice(5, 7) - 1; months[m].noinv += apptTotal(a); months[m].noinvCount++; });
   const invTotal = inv.reduce((t, i) => t + i.total, 0), paid = inv.filter((i) => i.status === "bezahlt").reduce((t, i) => t + i.total, 0);
   const noinv = noInv.reduce((t, a) => t + apptTotal(a), 0), total = invTotal + noinv;
-  const appts = S.appts.filter((a) => a.start.startsWith(ys));
+  const appts = S.appts.filter((a) => !isOwn(a) && a.start.startsWith(ys));
   const done = appts.filter((a) => a.status === "durchgefuehrt").length, noshow = appts.filter((a) => a.status === "ausgefallen").length;
   const bySvc = {}; inv.forEach((i) => i.lines.forEach((l) => (bySvc[l.name] = (bySvc[l.name] || 0) + l.qty * l.price)));
   noInv.forEach((a) => a.serviceIds.forEach((id) => { const s = svc(id); if (s) bySvc[s.name] = (bySvc[s.name] || 0) + s.price; }));

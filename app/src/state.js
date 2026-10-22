@@ -25,12 +25,16 @@ export const pat = (id) => ST.S.patients.find((p) => p.id === id);
 export const svc = (id) => ST.S.services.find((s) => s.id === id);
 export const pname = (p) => (p ? `${p.first} ${p.last}` : "Unbekannt");
 export const apptTotal = (a) => a.serviceIds.reduce((t, id) => t + (svc(id)?.price || 0), 0);
-export const apptTitle = (a) => a.serviceIds.map((id) => svc(id)?.name || "–").join(" + ");
+export const apptTitle = (a) => (isOwn(a) ? a.title : a.serviceIds.map((id) => svc(id)?.name || "–").join(" + "));
+// Eigener Termin: kein Kunde, keine Behandlung, keine Rechnung (z. B. privat, Besprechung)
+export const isOwn = (a) => !a.patientId;
+// Wer bzw. was im Kalender als Überschrift erscheint
+export const apptWho = (a) => (isOwn(a) ? a.title : pname(pat(a.patientId)));
 export const loc = (id) => ST.S.locations.find((l) => l.id === id);
 export const addr = (p) => [p?.street, [p?.zip, p?.city].filter(Boolean).join(" ")].filter(Boolean).join(", ");
-export const billable = () => ST.S.appts.filter((a) => a.status === "durchgefuehrt" && a.needsInvoice && !a.invoiceId && a.serviceIds.length);
+export const billable = () => ST.S.appts.filter((a) => !isOwn(a) && a.status === "durchgefuehrt" && a.needsInvoice && !a.invoiceId && a.serviceIds.length);
 // Durchgeführte Behandlungen, für die bewusst keine Rechnung erstellt wird (zählen trotzdem in der Statistik)
-export const unbilledDone = () => ST.S.appts.filter((a) => a.status === "durchgefuehrt" && !a.needsInvoice);
+export const unbilledDone = () => ST.S.appts.filter((a) => !isOwn(a) && a.status === "durchgefuehrt" && !a.needsInvoice);
 export function overlaps(start, duration, ignoreId) {
   const s = parseLocal(start), e = addMin(s, duration);
   return ST.S.appts.filter((a) => a.id !== ignoreId && a.status !== "abgesagt").filter((a) => {

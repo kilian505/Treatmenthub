@@ -117,6 +117,7 @@ tbody tr.click{cursor:pointer} tbody tr.click:hover{background:var(--surface-2)}
 .ev span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.85}
 .ev.s-abgesagt{text-decoration:line-through;border-style:dashed;border-color:var(--line)}
 .ev.billed::after{content:"€";position:absolute;top:3px;right:6px;font-weight:700}
+.ev.own,.mchip.own{background:var(--surface-2);color:var(--fg);border-left:3px solid var(--c3)}
 .now-line{position:absolute;left:0;right:0;height:2px;background:var(--bad);z-index:3;pointer-events:none}
 .legend{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:10px;font-size:.82rem}
 
@@ -162,6 +163,7 @@ tbody tr.click{cursor:pointer} tbody tr.click:hover{background:var(--surface-2)}
 .inv-date{text-align:right;margin:34px 0 30px}
 .inv .inv-no{font-weight:700;margin-bottom:30px}
 .inv-storno{color:#a11;margin-left:8px}
+.inv-loc{display:block;font-weight:400;margin-top:6px}
 .inv-items{margin:4px 0 40px 22px;width:calc(100% - 70px);border-collapse:collapse}
 .inv-items td{padding:1px 0;border:0;vertical-align:top}
 .inv-items td.num{white-space:nowrap;padding-left:24px;width:1%}
@@ -252,3 +254,5 @@ body{margin:0}
   .mdots{display:flex}
   .mhead div{font-size:.7rem;padding:.4rem .1rem}
 }
+.mdots i.own{background:var(--c3)}
+.pill.own{background:var(--surface-2);color:var(--fg);border-left:3px solid var(--c3)}

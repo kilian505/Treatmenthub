@@ -1,25 +1,28 @@
 // Termine, Kunden, Leistungen
 import { $, $$, esc, eur, ymd, hm, parseLocal, toLocalStr, addMin, fmtDate, fmtDay } from "./util.js";
-import { ST, render, STATUS, INV_STATUS, pat, svc, loc, addr, pname, apptTotal, apptTitle, overlaps, toast, toastError, modal, closeModal, busy, armed } from "./state.js";
+import { ST, render, STATUS, INV_STATUS, pat, svc, loc, addr, pname, apptTotal, apptTitle, apptWho, isOwn, overlaps, toast, toastError, modal, closeModal, busy, armed } from "./state.js";
 import * as api from "./api.js";
-import { openInvoice } from "./billing.js";
+import { openInvoice, openCreateInvoice } from "./billing.js";
 
 /* ---------------- Termin ---------------- */
 export function openAppt(id, startStr, presetPatient) {
   const { S } = ST;
   const existing = id ? S.appts.find((a) => a.id === id) : null;
   const a = existing ? structuredClone(existing)
-    : { id: null, patientId: presetPatient || null, start: startStr, duration: 0, serviceIds: [S.services.find((s) => s.active)?.id].filter(Boolean), status: "geplant", note: "", invoiceId: null, locationId: null, needsInvoice: true };
+    : { id: null, patientId: presetPatient || null, start: startStr, duration: 0, serviceIds: [S.services.find((s) => s.active)?.id].filter(Boolean), status: "geplant", note: "", invoiceId: null, locationId: null, needsInvoice: true, title: "" };
   const locked = !!a.invoiceId;
+  let own = !!existing && isOwn(existing); // Eigener Termin ohne Kunde und Behandlung
   let mode = a.patientId ? "chosen" : S.patients.length ? "search" : "new";
   let durManual = existing ? a.duration !== a.serviceIds.reduce((t, i) => t + (svc(i)?.duration || 0), 0) : false;
   const newP = { first: "", last: "", street: "", zip: "", city: "", birth: "", phone: "", email: "" };
 
   const ov = modal(`
-    <div class="modal-head"><h2>${existing ? "Termin" : "Neuer Termin"}</h2>${locked ? '<span class="pill s-bezahlt">abgerechnet</span>' : ""}<button class="btn ghost sm" data-close aria-label="Schließen">✕</button></div>
+    <div class="modal-head"><h2 id="apHead"></h2>${locked ? '<span class="pill s-bezahlt">abgerechnet</span>' : ""}<button class="btn ghost sm" data-close aria-label="Schließen">✕</button></div>
     <form class="modal-body" id="apptForm" novalidate>
       ${locked ? '<div class="alert info">Dieser Termin steht auf einer Rechnung und kann nicht mehr geändert werden. Für Änderungen die Rechnung stornieren.</div>' : ""}
-      <div class="section"><span class="label">Kunde</span><div id="patBox"></div></div>
+      ${locked ? "" : `<div class="tabs-mini" role="group" aria-label="Art des Termins"><button type="button" data-kind="treat" aria-pressed="${!own}">Behandlung</button><button type="button" data-kind="own" aria-pressed="${own}">Eigener Termin (ohne Behandlung)</button></div>`}
+      <div class="section own-only"><div class="field"><label for="ap-title">Titel</label><input id="ap-title" autocomplete="off" maxlength="120" placeholder="z. B. Privat, Arzttermin, Fortbildung, Besprechung" value="${esc(a.title)}"></div></div>
+      <div class="section treat-only"><span class="label">Kunde</span><div id="patBox"></div></div>
       <div class="section"><span class="label">Wann</span>
         <div class="grid3">
           <div class="field"><label for="ap-date">Datum</label><input id="ap-date" type="date" value="${a.start.slice(0, 10)}" ${locked ? "disabled" : ""}></div>
@@ -27,7 +30,7 @@ export function openAppt(id, startStr, presetPatient) {
           <div class="field"><label for="ap-dur">Dauer (Minuten)</label><input id="ap-dur" type="number" min="5" step="5" value="${a.duration}" ${locked ? "disabled" : ""}></div>
         </div><div id="overlapMsg"></div>
       </div>
-      <div class="section"><span class="label">Ort und Abrechnung</span>
+      <div class="section treat-only"><span class="label">Ort und Abrechnung</span>
         <div class="grid2">
           <div class="field"><label for="ap-loc">Ort der Behandlung</label><select id="ap-loc" ${locked ? "disabled" : ""}></select></div>
           <div class="field"><label for="ap-bill">Rechnung erstellen?</label><select id="ap-bill" ${locked ? "disabled" : ""}>
@@ -38,19 +41,19 @@ export function openAppt(id, startStr, presetPatient) {
           <button type="button" class="btn" id="ap-addloc">Hinzufügen</button></div></div>
         <p class="muted" style="font-size:.85rem;margin:.1rem 0 0" id="billHint"></p>
       </div>
-      <div class="section"><span class="label">Behandlung</span><div class="items" id="items"></div>
+      <div class="section treat-only"><span class="label">Behandlung</span><div class="items" id="items"></div>
         ${locked ? "" : '<button type="button" class="btn sm" id="addItem" style="align-self:flex-start">+ Weitere Leistung</button>'}
         <div class="sum"><span>Summe</span><span class="num" id="sum"></span></div>
       </div>
-      <div class="section"><span class="label">Status</span><div class="status-pick">
+      <div class="section treat-only"><span class="label">Status</span><div class="status-pick">
         ${Object.entries(STATUS).map(([k, v]) => `<button type="button" class="s-${k}" data-st="${k}" aria-pressed="${a.status === k}" ${locked ? "disabled" : ""}>${v}</button>`).join("")}
       </div></div>
-      <div class="field"><label for="ap-note">Notiz (intern, erscheint nicht auf der Rechnung)</label><textarea id="ap-note" ${locked ? "disabled" : ""}>${esc(a.note)}</textarea></div>
+      <div class="field"><label for="ap-note">Notiz (intern)</label><textarea id="ap-note" ${locked ? "disabled" : ""}>${esc(a.note)}</textarea></div>
       <div id="formErr"></div>
     </form>
     <div class="modal-foot">
       <div class="left">${existing && !locked ? '<button class="btn danger" id="delAppt">Löschen</button>' : ""}
-        ${existing && !locked && a.status === "durchgefuehrt" && a.needsInvoice ? '<button class="btn" id="billNow">Jetzt abrechnen</button>' : ""}
+        ${existing && !locked && !own && a.status === "durchgefuehrt" && a.needsInvoice ? '<button class="btn" id="billNow">Jetzt abrechnen</button>' : ""}
         ${locked ? '<button class="btn" id="showInv">Rechnung ansehen</button>' : ""}</div>
       <button class="btn" data-close>Abbrechen</button>
       ${locked ? "" : `<button class="btn primary" id="saveAppt">${existing ? "Speichern" : "Termin anlegen"}</button>`}
@@ -109,6 +112,7 @@ export function openAppt(id, startStr, presetPatient) {
     $("#sum").textContent = eur(apptTotal(a));
   }
   function sync() {
+    if (own) { checkOverlap(); return; }
     if (!durManual) { a.duration = a.serviceIds.reduce((t, i) => t + (svc(i)?.duration || 0), 0) || 30; $("#ap-dur").value = a.duration; }
     $("#sum").textContent = eur(apptTotal(a)); checkOverlap();
   }
@@ -116,7 +120,7 @@ export function openAppt(id, startStr, presetPatient) {
     const d = $("#ap-date").value, t = $("#ap-time").value, box = $("#overlapMsg");
     if (!d || !t) { box.innerHTML = ""; return; }
     const dur = +$("#ap-dur").value || 0, o = overlaps(`${d}T${t}`, dur, a.id), s = parseLocal(`${d}T${t}`);
-    box.innerHTML = (o.length ? `<div class="alert warn">Überschneidung mit ${o.map((x) => `${x.start.slice(11, 16)} ${esc(pname(pat(x.patientId)))}`).join(", ")}.</div>` : "")
+    box.innerHTML = (o.length ? `<div class="alert warn">Überschneidung mit ${o.map((x) => `${x.start.slice(11, 16)} ${esc(apptWho(x))}`).join(", ")}.</div>` : "")
       + `<div class="muted" style="font-size:.85rem;margin-top:.3rem">${fmtDay(s)}, ${hm(s)} – ${hm(addMin(s, dur))} Uhr</div>`;
   }
   function renderLoc() {
@@ -127,8 +131,20 @@ export function openAppt(id, startStr, presetPatient) {
   }
   const billHint = () => ($("#billHint").textContent = $("#ap-bill").value === "nein"
     ? "Für diesen Termin wird keine Rechnung erstellt. Er zählt trotzdem in der Statistik und steht unter Rechnungen → Ohne Rechnung." : "");
+  // Behandlung oder eigener Termin: passende Abschnitte zeigen
+  function setKind(v) {
+    own = v;
+    $("#apHead").textContent = own ? (existing ? "Eigener Termin" : "Neuer eigener Termin") : existing ? "Termin" : "Neuer Termin";
+    $$(".treat-only", ov).forEach((el) => (el.hidden = own)); $$(".own-only", ov).forEach((el) => (el.hidden = !own));
+    $$("[data-kind]", ov).forEach((b) => b.setAttribute("aria-pressed", (b.dataset.kind === "own") === own));
+    if (own && !existing && !durManual) { a.duration = 60; $("#ap-dur").value = 60; }
+    if (own) setTimeout(() => $("#ap-title").focus(), 30);
+    $("#formErr").innerHTML = ""; sync();
+  }
   renderPat(); renderItems(); renderLoc(); billHint(); checkOverlap();
   if (!existing && !locked) sync();
+  setKind(own);
+  $$("[data-kind]", ov).forEach((b) => (b.onclick = () => setKind(b.dataset.kind === "own")));
   if (!locked) {
     $("#ap-loc").onchange = (e) => {
       if (e.target.value === "__neu") { $("#newLocBox").hidden = false; e.target.value = a.locationId || ""; setTimeout(() => $("#ap-newloc").focus(), 20); }
@@ -155,16 +171,19 @@ export function openAppt(id, startStr, presetPatient) {
   }
   function validate() {
     const err = [];
-    if (mode === "new") err.push(...patientErrors(newP));
+    if (own) { if (!$("#ap-title").value.trim()) err.push("Bitte einen Titel eintragen, z. B. „Privat“."); }
+    else if (mode === "new") err.push(...patientErrors(newP));
     else if (!a.patientId) err.push("Bitte einen Kunden auswählen oder neu anlegen.");
     if (!$("#ap-date").value || !$("#ap-time").value) err.push("Datum und Uhrzeit fehlen.");
-    if (!a.serviceIds.length) err.push("Bitte mindestens eine Leistung wählen.");
+    if (!own && !a.serviceIds.length) err.push("Bitte mindestens eine Leistung wählen.");
     $("#formErr").innerHTML = err.length ? `<div class="alert bad">${err.map(esc).join("<br>")}</div>` : "";
     return !err.length;
   }
   async function persist() {
-    if (mode === "new") {
-      const p = await api.savePatient(trimAll(newP)); S.patients.push(p); a.patientId = p.id; mode = "chosen";
+    if (own) Object.assign(a, { patientId: null, serviceIds: [], locationId: null, needsInvoice: false, title: $("#ap-title").value.trim() });
+    else {
+      a.title = "";
+      if (mode === "new") { const p = await api.savePatient(trimAll(newP)); S.patients.push(p); a.patientId = p.id; mode = "chosen"; }
     }
     a.start = `${$("#ap-date").value}T${$("#ap-time").value}`; a.duration = +$("#ap-dur").value || 30; a.note = $("#ap-note").value;
     const saved = await api.saveAppt(a);
@@ -186,8 +205,7 @@ export function openAppt(id, startStr, presetPatient) {
   if (bill) bill.onclick = () => { if (!validate()) return; busy(bill, async () => {
     try {
       const r = await persist();
-      const inv = await api.createInvoice(r.patientId, [r.id]);
-      S.invoices.push(inv); r.invoiceId = inv.id; closeModal(); render(); openInvoice(inv.id);
+      render(); openCreateInvoice(r.patientId, [r]);
     } catch (e) { toastError(e); }
   }); };
   const si = $("#showInv"); if (si) si.onclick = () => openInvoice(a.invoiceId);
